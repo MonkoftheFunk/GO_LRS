@@ -1,26 +1,30 @@
-Tincan / xAPI Learning Record Store in "Go"
+Tin Can / xAPI Learning Record Store in "Go"
 =============================================
 
 Currently starting with the Statement API
 Refactoring and Tests will come later (looking at http://frisbyjs.com/ for a platform independent xAPI REST unit tests)
 
+Not production ready
+
 Developed because:
 * Right tool for the job (fast and few system setup requirements)
-* Can run on windows and linux servers or Google App Engine
+* Can run on Windows and Linux servers or Google App Engine
 * Wanted to start an Open Source Project
 * Wanted to learn GO and MonogoDB
-* The front end can then be written in any language
+* The front end can then be written in any language (PHP, .Net, 
 
 Lots of help from these resources:
 * [Golang spec doc](http://golang.org/ref/spec)
 * [xAPI spec doc](https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md)
 * [ADL's Python LRS](https://github.com/adlnet/ADL_LRS)
+* [Requires MongoDB](http://www.mongodb.org/)
 
 Other Useful Resources:
 * [REST API Testing tool](http://www.getpostman.com/)
 * [GO IDE for Windows](http://www.zeusedit.com/)
-
-Not production ready
+* [Linked In Tin Can API User Group](http://www.linkedin.com/groups/Tin-Can-API-User-Group-4525548)
+* [Tin Can API.com](http://tincanapi.com/)
+* [Tin Can API .co .uk](http://tincanapi.co.uk/)
 
 ## License
 
