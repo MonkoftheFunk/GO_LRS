@@ -183,23 +183,73 @@ func checkIdConflict(w http.ResponseWriter, statementsC *mgo.Collection, stateme
 	return 0
 }
 
-// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
 func GetStatement(w http.ResponseWriter, r *http.Request) {
 
-   	// --validate
-   	// check if format ['exact', 'canonical', 'ids'] default exact
-   	// check if	contain both statementId and voidedStatementId parameters then 400
-   	// check contain any other parameter besides "attachments" or "format".
-   	/* not_allowed = ["agent", "verb", "activity", "registration",
-                       "related_activities", "related_agents", "since",
-                       "until", "limit", "ascending"]*/
+	// --validate
+	// check if format ['exact', 'canonical', 'ids'] default exact
+	formats_allowed := map[string]bool{"exact": true, "canonical": true, "ids": true}
+	format := r.FormValue("format")
+	if format == "" || formats_allowed[format] == false {
+		format = "exact"
+	}
 
-	// --query db
-	// check id exists or voided
-	// The LRS MUST not return any Statement which has been voided, unless that Statement has been requested by voidedStatementId.
-	// The LRS MUST still return any Statements targeting the voided Statement when retrieving Statements using explicit
-	// or implicit time or sequence based retrieval, unless they themselves have been voided.
-	// query complex get
+	// check if	contain both statementId and voidedStatementId parameters then 400
+	statementId := r.FormValue("statementId")
+	voidedStatementId := r.FormValue("voidedStatementId")
+	if statementId != "" && voidedStatementId != "" {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+
+	// if single query
+	// then make sure other parameters are not called
+	if statementId != "" || voidedStatementId != "" {
+		parameters_NotAllowed := []string{"agent", "verb", "activity",
+			"registration", "related_activities",
+			"since", "until", "limit", "ascending"}
+		for _, p := range parameters_NotAllowed {
+			param := r.FormValue(p)
+			if param != "" {
+				w.WriteHeader(http.StatusBadRequest)
+			}
+		}
+
+		voided := false
+		if voidedStatementId != "" {
+			statementId = voidedStatementId
+			voided = true
+		}
+
+		// connect to db
+		session := dbSession()
+		defer session.Close()
+		statementsC := session.DB("LRS").C("statements")
+
+		// find statement
+		var result Statement
+		err := statementsC.Find(bson.M{"id": statementId}).One(&result)
+		if err != nil {
+			// fmt.Fprint(w, err)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+
+		// The LRS MUST not return any Statement which has been voided,
+		// unless that Statement has been requested by voidedStatementId.
+		if result.Void != voided {
+			// fmt.Fprint(w, "result: void="+result.Void+" request void="+voided)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+
+		w.Header().Add("Content-Type", "application/json")
+		w.Header().Add("X-Experience-API-Version", "1.0")
+		w.WriteHeader(http.StatusOK)
+		enc := json.NewEncoder(w)
+		enc.Encode(result)
+	} else { // complex query
+		// build query
+		// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
+
+	}
+
 	// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
 	// based on "stored" time, subject to permissions and maximum list length.
 	// create cache for more statements due to limit
@@ -223,6 +273,7 @@ func (s *Statement) Validate() (string, error) {
 // import github.com/bitly/go-simplejson maybe instead
 type Statement struct {
 	Id          string
+	Void        bool `json:"-"`
 	Actor       Actor
 	Verb        Verb
 	Object      Object

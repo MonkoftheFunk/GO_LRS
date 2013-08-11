@@ -11,7 +11,7 @@ Developed because:
 * Can run on Windows and Linux servers or Google App Engine
 * Wanted to start an Open Source Project
 * Wanted to learn GO and MonogoDB
-* The front end can then be written in any language (PHP, .Net, 
+* The front end can then be written in any language (PHP, .Net, ...)
 
 Lots of help from these resources:
 * [Golang spec doc](http://golang.org/ref/spec)
