@@ -328,36 +328,36 @@ type Statement struct {
 	Void        bool `json:"-"`
 	Actor       Actor
 	Verb        Verb
-	Object      Object
-	Result      Result
-	Context     Context
-	Timestamp   string
-	Stored      string
-	Authority   Actor
-	Version     string
-	Attachments []Attachment
+	Object      Object       `bson:",omitempty" json:",omitempty"`
+	Result      Result       `bson:",omitempty" json:",omitempty"`
+	Context     Context      `bson:",omitempty" json:",omitempty"`
+	Timestamp   string       `bson:",omitempty" json:",omitempty"`
+	Stored      string       `bson:",omitempty" json:",omitempty"`
+	Authority   Actor        `bson:",omitempty" json:",omitempty"`
+	Version     string       `bson:",omitempty" json:",omitempty"`
+	Attachments []Attachment `bson:",omitempty" json:",omitempty"`
 }
 
 // statement
 type Actor struct {
-	ObjectType   string  `json:",omitempty"`
-	Name         string  `json:",omitempty"`
-	Mbox         string  `json:",omitempty"`
-	Mbox_sha1sum string  `json:",omitempty"`
-	OpenID       string  `json:",omitempty"`
-	Account      Account `json:",omitempty"`
+	ObjectType   string  `bson:",omitempty" json:",omitempty"`
+	Name         string  `bson:",omitempty" json:",omitempty"`
+	Mbox         string  `bson:",omitempty" json:",omitempty"`
+	Mbox_sha1sum string  `bson:",omitempty" json:",omitempty"`
+	OpenID       string  `bson:",omitempty" json:",omitempty"`
+	Account      Account `bson:",omitempty" json:",omitempty"`
 	// group
-	Member []Actor `json:",omitempty"`
+	Member []Actor `bson:",omitempty" json:",omitempty"`
 }
 
 // actor
 type Agent struct {
-	ObjectType   string  `json:",omitempty"`
-	Name         string  `json:",omitempty"`
-	Mbox         string  `json:",omitempty"`
-	Mbox_sha1sum string  `json:",omitempty"`
-	OpenID       string  `json:",omitempty"`
-	Account      Account `json:",omitempty"`
+	ObjectType   string  `bson:",omitempty" json:",omitempty"`
+	Name         string  `bson:",omitempty" json:",omitempty"`
+	Mbox         string  `bson:",omitempty" json:",omitempty"`
+	Mbox_sha1sum string  `bson:",omitempty" json:",omitempty"`
+	OpenID       string  `bson:",omitempty" json:",omitempty"`
+	Account      Account `bson:",omitempty" json:",omitempty"`
 }
 
 // actor
@@ -374,20 +374,20 @@ type Verb struct {
 
 // activity, Agent/Group, Sub-Statement, StatementReference
 type Object struct {
-	ObjectType string     `json:",omitempty"`
-	Id         string     `json:",omitempty"`
-	Definition Definition `json:",omitempty"`
+	ObjectType string     `bson:",omitempty" json:",omitempty"`
+	Id         string     `bson:",omitempty" json:",omitempty"`
+	Definition Definition `bson:",omitempty" json:",omitempty"`
 	// substatement
-	Actor       Actor        `json:",omitempty"`
-	Verb        Verb         `json:",omitempty"`
-	Object      StatementRef `json:",omitempty"`
-	Result      Result       `json:",omitempty"`
-	Context     Context      `json:",omitempty"`
-	Timestamp   string       `json:",omitempty"`
-	Stored      string       `json:",omitempty"`
-	Authority   Actor        `json:",omitempty"`
-	Version     string       `json:",omitempty"`
-	Attachments []Attachment `json:",omitempty"`
+	Actor       Actor        `bson:",omitempty" json:",omitempty"`
+	Verb        Verb         `bson:",omitempty" json:",omitempty"`
+	Object      StatementRef `bson:",omitempty" json:",omitempty"`
+	Result      Result       `bson:",omitempty" json:",omitempty"`
+	Context     Context      `bson:",omitempty" json:",omitempty"`
+	Timestamp   string       `bson:",omitempty" json:",omitempty"`
+	Stored      string       `bson:",omitempty" json:",omitempty"`
+	Authority   Actor        `bson:",omitempty" json:",omitempty"`
+	Version     string       `bson:",omitempty" json:",omitempty"`
+	Attachments []Attachment `bson:",omitempty" json:",omitempty"`
 }
 
 // object
@@ -404,11 +404,11 @@ type Definition struct {
 type Interaction struct {
 	InteractionType         string
 	CorrectResponsesPattern []string
-	choices                 []InteractionComponents `json:",omitempty"`
-	scale                   []InteractionComponents `json:",omitempty"`
-	source                  []InteractionComponents `json:",omitempty"`
-	target                  []InteractionComponents `json:",omitempty"`
-	steps                   []InteractionComponents `json:",omitempty"`
+	choices                 []InteractionComponents `bson:",omitempty" json:",omitempty"`
+	scale                   []InteractionComponents `bson:",omitempty" json:",omitempty"`
+	source                  []InteractionComponents `bson:",omitempty" json:",omitempty"`
+	target                  []InteractionComponents `bson:",omitempty" json:",omitempty"`
+	steps                   []InteractionComponents `bson:",omitempty" json:",omitempty"`
 }
 
 // interaction
