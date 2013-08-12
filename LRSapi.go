@@ -65,14 +65,22 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 	var sids []string
 	for _, s := range statements {
 
-		sid, err := s.Validate()
-		if err != nil {
+		sid, status := s.Validate()
+		if status != 0 {
 			w.WriteHeader(http.StatusBadRequest)
 			// fmt.Fprint(w, err)
 			return
 		}
 		// output new ids
 		sids = append(sids, sid)
+
+		//check if voided
+		status = checkSpecialActionVerbs(w, statementsC, s)
+		if status != 0 {
+			w.WriteHeader(status)
+			// fmt.Fprint(w, status)
+			return
+		}
 
 		// save to db
 		statementsC.Insert(s)
@@ -117,18 +125,59 @@ func PutStatement(w http.ResponseWriter, r *http.Request) {
 	status := checkIdConflict(w, statementsC, s)
 	if status != 0 {
 		w.WriteHeader(status)
-		// fmt.Fprint(w, status)
+		// fmt.Fprint(w, "confilct "+string(status))
 		return
 	}
 
-	_, err = s.Validate()
-	if err != nil {
+	_, status = s.Validate()
+	if status != 0 {
 		w.WriteHeader(http.StatusBadRequest)
-		// fmt.Fprint(w, err)
+		// fmt.Fprint(w, "Validate "+string(status))
 		return
 	}
+
+	//check if voided/unvoided
+	status = checkSpecialActionVerbs(w, statementsC, s)
+	if status != 0 {
+		w.WriteHeader(status)
+		// fmt.Fprint(w, "Void "+string(status))
+		return
+	}
+
 	// save to db
 	statementsC.Insert(s)
+}
+
+func checkSpecialActionVerbs(w http.ResponseWriter, statementsC *mgo.Collection, statement Statement) int {
+	//voiding
+	if statement.Verb.Id == "http://adlnet.gov/expapi/verbs/voided" {
+		if statement.Object.ObjectType != "StatementRef" {
+			//fmt.Fprint(w, "StatementRef")
+			return http.StatusBadRequest
+		}
+
+		if statement.Object.Id == "" {
+			//fmt.Fprint(w, "Object.Id")
+			return http.StatusBadRequest
+		}
+
+		var result Statement
+		err := statementsC.Find(bson.M{"id": statement.Object.Id}).One(&result)
+		if err != nil {
+			//fmt.Fprint(w, "not found refrence")
+			return http.StatusBadRequest
+		}
+
+		if result.Void != true {
+			err = statementsC.Update(bson.M{"id": result.Id}, bson.M{"$set": bson.M{"void": true}})
+			if err != nil {
+				//fmt.Fprint(w, "cant update")
+				//fmt.Fprint(w, err)
+				return http.StatusBadRequest
+			}
+		}
+	}
+	return 0
 }
 
 func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, statements []Statement) int {
@@ -148,9 +197,9 @@ func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, st
 	if IDs != nil {
 		var result []Statement
 		err := statementsC.Find(bson.M{"id": bson.M{"$in": IDs}}).All(&result)
+		// didn't find any matches
 		if err != nil {
-			// fmt.Fprint(w, err)
-			return http.StatusBadRequest
+			return 0
 		}
 
 		for _, s := range result {
@@ -158,7 +207,6 @@ func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, st
 			rj, _ := json.Marshal(Lkup[s.Id])
 			sj, _ := json.Marshal(s)
 			if string(rj) != string(sj) {
-				// fmt.Fprint(w, "error conflict")
 				return http.StatusConflict
 			}
 		}
@@ -171,12 +219,15 @@ func checkIdConflict(w http.ResponseWriter, statementsC *mgo.Collection, stateme
 	if statement.Id != "" {
 		var result Statement
 		err := statementsC.Find(bson.M{"id": statement.Id}).One(&result)
+		// didn't find a match
+		if err != nil {
+			return 0
+		}
 
 		// can't compare structs with arrays/maps
 		rj, _ := json.Marshal(result)
 		sj, _ := json.Marshal(statement)
-		if err == nil && string(rj) != string(sj) {
-			// fmt.Fprint(w, "error conflict")
+		if string(rj) != string(sj) {
 			return http.StatusConflict
 		}
 	}
@@ -260,13 +311,14 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 // https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
 // http://zackpierce.github.io/xAPI-Validator-JS/
 // not sure how much if/howmuch I will validate structure
-func (s *Statement) Validate() (string, error) {
+func (s *Statement) Validate() (string, int) {
+
 	// generate new ID's
 	if s.Id == "" {
 		id, _ := uuid.NewV4()
 		s.Id = id.String()
 	}
-	return s.Id, nil
+	return s.Id, 0
 }
 
 // -----------------------------------------------------------------
