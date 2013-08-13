@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	//"fmt"
 	"github.com/gorilla/mux"
 	"github.com/nu7hatch/gouuid"
 	"labix.org/v2/mgo"
@@ -32,14 +32,15 @@ func dbSession() *mgo.Session {
 	}
 	return session
 }
-func readStmts(r io.Reader) (bool, []byte, error) {
+
+func readStmts(r io.Reader) (bool, string, error) {
 	body, err := ioutil.ReadAll(r)
 	if err != nil {
-		return false, body, err
+		return false, string(body), err
 	}
+
 	isArray := false
 	for _, c := range body {
-		// http://godoc.org/encoding/json?file=scanner.go#isSpace
 		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
 			continue
 		}
@@ -47,10 +48,11 @@ func readStmts(r io.Reader) (bool, []byte, error) {
 		break
 	}
 
-	return isArray, body, err
+	return isArray, string(body), err
 }
 
 func PostStatement(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
 
 	statementId := r.FormValue("statementId")
 	if statementId != "" {
@@ -58,23 +60,21 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-  	defer r.Body.Close()
+	isArray,body,_ := readStmts(r.Body)
+	decoder := json.NewDecoder(strings.NewReader(body))
 
-	a,b,_ := readStmts(r.Body)
-	decoder := json.NewDecoder(strings.NewReader(string(b)))
 	var statements []Statement
-	if(a){
+	if(isArray){
     	err := decoder.Decode(&statements)
     	if err != nil {
-    		fmt.Fprint(w, err)
+    		//fmt.Fprint(w, err)
     	    w.WriteHeader(http.StatusBadRequest)
     	}
-
 	}else{
         var statement Statement
         err := decoder.Decode(&statement)
         if err != nil {
-            fmt.Fprint(w, err)
+           // fmt.Fprint(w, err)
             w.WriteHeader(http.StatusBadRequest)
         }
         statements = append(statements,statement)
