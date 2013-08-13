@@ -8,6 +8,9 @@ import (
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"net/http"
+		"io/ioutil"
+		"io"
+		"strings"
 )
 
 func main() {
@@ -29,6 +32,23 @@ func dbSession() *mgo.Session {
 	}
 	return session
 }
+func readStmts(r io.Reader) (bool, []byte, error) {
+	body, err := ioutil.ReadAll(r)
+	if err != nil {
+		return false, body, err
+	}
+	isArray := false
+	for _, c := range body {
+		// http://godoc.org/encoding/json?file=scanner.go#isSpace
+		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+			continue
+		}
+		isArray = c == '['
+		break
+	}
+
+	return isArray, body, err
+}
 
 func PostStatement(w http.ResponseWriter, r *http.Request) {
 
@@ -38,16 +58,27 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decoder := json.NewDecoder(r.Body)
-	defer r.Body.Close()
+  	defer r.Body.Close()
 
+	a,b,_ := readStmts(r.Body)
+	decoder := json.NewDecoder(strings.NewReader(string(b)))
 	var statements []Statement
-	err := decoder.Decode(&statements)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		// fmt.Fprint(w, err)
-		return
-	}
+	if(a){
+    	err := decoder.Decode(&statements)
+    	if err != nil {
+    		fmt.Fprint(w, err)
+    	    w.WriteHeader(http.StatusBadRequest)
+    	}
+
+	}else{
+        var statement Statement
+        err := decoder.Decode(&statement)
+        if err != nil {
+            fmt.Fprint(w, err)
+            w.WriteHeader(http.StatusBadRequest)
+        }
+        statements = append(statements,statement)
+    }
 
 	// connect to db
 	session := dbSession()
@@ -91,7 +122,8 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("X-Experience-API-Version", "1.0")
 	w.WriteHeader(http.StatusOK)
 
-	fmt.Fprint(w, sids)
+	enc := json.NewEncoder(w)
+	enc.Encode(sids)
 	return
 }
 
