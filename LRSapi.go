@@ -5,12 +5,12 @@ import (
 	//"fmt"
 	"github.com/gorilla/mux"
 	"github.com/nu7hatch/gouuid"
+	"io"
+	"io/ioutil"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"net/http"
-		"io/ioutil"
-		"io"
-		"strings"
+	"strings"
 )
 
 func main() {
@@ -60,25 +60,25 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isArray,body,_ := readStmts(r.Body)
+	isArray, body, _ := readStmts(r.Body)
 	decoder := json.NewDecoder(strings.NewReader(body))
 
 	var statements []Statement
-	if(isArray){
-    	err := decoder.Decode(&statements)
-    	if err != nil {
-    		//fmt.Fprint(w, err)
-    	    w.WriteHeader(http.StatusBadRequest)
-    	}
-	}else{
-        var statement Statement
-        err := decoder.Decode(&statement)
-        if err != nil {
-           // fmt.Fprint(w, err)
-            w.WriteHeader(http.StatusBadRequest)
-        }
-        statements = append(statements,statement)
-    }
+	if isArray {
+		err := decoder.Decode(&statements)
+		if err != nil {
+			//fmt.Fprint(w, err)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	} else {
+		var statement Statement
+		err := decoder.Decode(&statement)
+		if err != nil {
+			// fmt.Fprint(w, err)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		statements = append(statements, statement)
+	}
 
 	// connect to db
 	session := dbSession()
