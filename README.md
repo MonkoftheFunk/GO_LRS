@@ -5,17 +5,17 @@ Currently starting with the Statement API
 Refactoring and Tests will come later (looking at http://frisbyjs.com/ for a platform independent xAPI REST unit tests)
 
 Done:
-POST statement(s) w/ conflict check
-PUT statement w/ conflict check
-POST/PUT Void statement
-GET statement by voidStatementId and StatementId
+* POST statement(s) w/ conflict check
+* PUT statement w/ conflict check
+* POST/PUT Void statement
+* GET statement by voidStatementId and StatementId
 
 In Progress:
-GET complex query
-GET more query due to limit
-REST Unit Tests
-Deal with attachments
-Auth and Cross Origin Requests
+* GET complex query
+* GET more query due to limit
+* REST Unit Tests
+* Deal with attachments
+* Auth and Cross Origin Requests
 
 Not production ready
 
