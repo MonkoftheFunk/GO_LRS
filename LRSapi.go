@@ -11,6 +11,7 @@ import (
 	"labix.org/v2/mgo/bson"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -327,10 +328,84 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		enc := json.NewEncoder(w)
 		enc.Encode(result)
-	} else { // complex query
-		// build query
+	} else {
+		// complex query
 		// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
+		var q = bson.M{}
+		if since := r.FormValue("since"); since != "" {
+			t, _ := time.Parse("RFC3339", since)
+			q["StoredVal"] = bson.M{"$gt": t}
+		}
 
+		if until := r.FormValue("until"); until != "" {
+			t, _ := time.Parse("RFC3339", until)
+			q["StoredVal"] = bson.M{"$lt": t}
+		}
+
+		findInRef := false
+		if verb := r.FormValue("verb"); verb != "" {
+			q["Verb"] = verb
+			findInRef = true
+		}
+
+		if registration := r.FormValue("registration"); registration != "" {
+			q["Registration"] = registration
+			findInRef = true
+		}
+
+		if agent := r.FormValue("agent"); agent != "" {
+			/* JSONObject
+			 * Filter, only return Statements for which the specified
+			 * Agent or group is the Actor or Object of the Statement.
+			 * Agents or identified groups are equal when the same
+			 * Inverse Functional Identifier is used in each Object
+			 * compared and those Inverse Functional Identifiers have
+			 * equal values.
+			 * For the purposes of this filter, groups that have members
+			 * which match the specified Agent based on their Inverse Functional
+			 * Identifier as described above are considered a match
+			 */
+			q["Agent"] = agent
+			findInRef = true
+
+			if related_agents := r.FormValue("related_agents"); related_agents != "" {
+				/* bool
+				 * Apply the Agent filter broadly. Include Statements for
+				 * which the Actor, Object, Authority, Instructor, Team, or
+				 * any of these properties in a contained SubStatement match
+				 * the Agent parameter, instead of that parameter's normal
+				 * behavior. Matching is defined in the same way it is for
+				 * the 'agent' parameter.
+				 */
+			}
+		}
+
+		if activity := r.FormValue("activity"); activity != "" {
+			q["Activity"] = activity
+			findInRef = true
+			if related_activities := r.FormValue("related_activities"); related_activities != "" {
+				/* bool
+				 * Apply the Activity filter broadly. Include Statements
+				 * for which the Object, any of the context Activities,
+				 * or any of those properties in a contained SubStatement
+				 * match the Activity parameter, instead of that parameter's
+				 * normal behavior. Matching is defined in the same way it is
+				 * for the 'Activity' parameter."
+				 */
+			}
+		}
+
+		if attachments := r.FormValue("attachments"); attachments != "" {
+		}
+
+		if ascending := r.FormValue("ascending"); ascending != "" {
+		}
+
+		if format := r.FormValue("format"); format != "" {
+		}
+
+		if limit := r.FormValue("limit"); limit != "" {
+		}
 	}
 
 	// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
@@ -350,6 +425,11 @@ func (s *Statement) Validate() (string, int) {
 		id, _ := uuid.NewV4()
 		s.Id = id.String()
 	}
+	// generate stored datetime .Format("RFC3339")
+	t := time.Now()
+	s.StoredVal = t
+	s.Stored = t.Format("RFC3339")
+
 	return s.Id, 0
 }
 
@@ -365,6 +445,7 @@ type Statement struct {
 	Context     Context      `bson:",omitempty" json:",omitempty"`
 	Timestamp   string       `bson:",omitempty" json:",omitempty"`
 	Stored      string       `bson:",omitempty" json:",omitempty"`
+	StoredVal   time.Time    `bson:",omitempty" json:"-"`
 	Authority   Actor        `bson:",omitempty" json:",omitempty"`
 	Version     string       `bson:",omitempty" json:",omitempty"`
 	Attachments []Attachment `bson:",omitempty" json:",omitempty"`
