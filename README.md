@@ -4,6 +4,18 @@ Tin Can / xAPI Learning Record Store in "Go"
 Currently starting with the Statement API
 Refactoring and Tests will come later (looking at http://frisbyjs.com/ for a platform independent xAPI REST unit tests)
 
+Packages used: (add issue if you want me to add to repository)
+```
+// routing
+$ go get github.com/gorilla/mux
+
+// guid creation
+$ go get github.com/nu7hatch/gouuid
+
+// monogdb (requires bzr to download)
+$ go get labix.org/v2/mgo
+$ go get labix.org/v2/mgo/bson
+```
 Done:
 * POST statement(s) w/ conflict check
 * PUT statement w/ conflict check
@@ -25,6 +37,7 @@ Developed because:
 * Wanted to start an Open Source Project
 * Wanted to learn GO and MonogoDB
 * The front end can then be written in any language (PHP, .Net, ...)
+* Can be re-developed in any language easily
 
 Lots of help from these resources:
 * [Golang spec doc](http://golang.org/ref/spec)
@@ -38,6 +51,7 @@ Other Useful Resources:
 * [Linked In Tin Can API User Group](http://www.linkedin.com/groups/Tin-Can-API-User-Group-4525548)
 * [Tin Can API.com](http://tincanapi.com/)
 * [Tin Can API .co .uk](http://tincanapi.co.uk/)
+* [Bazaar is a version control to download mgo](http://bazaar.canonical.com/en/)
 
 ## License
 

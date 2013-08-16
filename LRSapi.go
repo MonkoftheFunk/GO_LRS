@@ -55,12 +55,14 @@ func readStmts(r io.Reader) (bool, string, error) {
 func PostStatement(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
+	// check if post is being used as a put
 	statementId := r.FormValue("statementId")
 	if statementId != "" {
 		PutStatement(w, r)
 		return
 	}
 
+	// determin if array of statements or just single statement
 	isArray, body, _ := readStmts(r.Body)
 	decoder := json.NewDecoder(strings.NewReader(body))
 
@@ -94,6 +96,7 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// go through each statement to validate and store
 	var sids []string
 	for _, s := range statements {
 
@@ -179,11 +182,16 @@ func PutStatement(w http.ResponseWriter, r *http.Request) {
 
 	// save to db
 	statementsC.Insert(s)
+
+	// no response back
+	return
 }
 
 func checkSpecialActionVerbs(w http.ResponseWriter, statementsC *mgo.Collection, statement Statement) int {
 	//voiding
 	if statement.Verb.Id == "http://adlnet.gov/expapi/verbs/voided" {
+
+		// check has statementId to void
 		if statement.Object.ObjectType != "StatementRef" {
 			//fmt.Fprint(w, "StatementRef")
 			return http.StatusBadRequest
@@ -194,6 +202,7 @@ func checkSpecialActionVerbs(w http.ResponseWriter, statementsC *mgo.Collection,
 			return http.StatusBadRequest
 		}
 
+		// find if statement to be voided exists
 		var result Statement
 		err := statementsC.Find(bson.M{"id": statement.Object.Id}).One(&result)
 		if err != nil {
@@ -201,6 +210,7 @@ func checkSpecialActionVerbs(w http.ResponseWriter, statementsC *mgo.Collection,
 			return http.StatusBadRequest
 		}
 
+		// if statement hasn't been voided do so
 		if result.Void != true {
 			err = statementsC.Update(bson.M{"id": result.Id}, bson.M{"$set": bson.M{"void": true}})
 			if err != nil {
@@ -228,9 +238,9 @@ func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, st
 
 	// if so then check if they are the same object so as not to throw conflict
 	if IDs != nil {
+		// find any statements with those ids
 		var result []Statement
 		err := statementsC.Find(bson.M{"id": bson.M{"$in": IDs}}).All(&result)
-		// didn't find any matches
 		if err != nil {
 			return 0
 		}
@@ -250,9 +260,9 @@ func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, st
 func checkIdConflict(w http.ResponseWriter, statementsC *mgo.Collection, statement Statement) int {
 
 	if statement.Id != "" {
+		// find any statements with this id
 		var result Statement
 		err := statementsC.Find(bson.M{"id": statement.Id}).One(&result)
-		// didn't find a match
 		if err != nil {
 			return 0
 		}
@@ -323,11 +333,13 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 		}
 
+		// return back found statement
 		w.Header().Add("Content-Type", "application/json")
 		w.Header().Add("X-Experience-API-Version", "1.0")
 		w.WriteHeader(http.StatusOK)
 		enc := json.NewEncoder(w)
 		enc.Encode(result)
+
 	} else {
 		// complex query
 		// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
@@ -354,65 +366,75 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if agent := r.FormValue("agent"); agent != "" {
-			/* JSONObject
-			 * Filter, only return Statements for which the specified
-			 * Agent or group is the Actor or Object of the Statement.
-			 * Agents or identified groups are equal when the same
-			 * Inverse Functional Identifier is used in each Object
-			 * compared and those Inverse Functional Identifiers have
-			 * equal values.
-			 * For the purposes of this filter, groups that have members
-			 * which match the specified Agent based on their Inverse Functional
-			 * Identifier as described above are considered a match
-			 */
-			q["Agent"] = agent
+			// JSONObject, Compare optional Identifiers
+			var actor Actor
+			decoder := json.NewDecoder(strings.NewReader(agent))
+			err := decoder.Decode(&actor)
+			if err != nil {
+				// fmt.Fprint(w, err)
+				w.WriteHeader(http.StatusBadRequest)
+			}
+
+			aq := []bson.M{bson.M{"Actor": actor},
+				bson.M{"Actor.Member": actor}}
+
 			findInRef = true
 
-			if related_agents := r.FormValue("related_agents"); related_agents != "" {
-				/* bool
-				 * Apply the Agent filter broadly. Include Statements for
-				 * which the Actor, Object, Authority, Instructor, Team, or
-				 * any of these properties in a contained SubStatement match
-				 * the Agent parameter, instead of that parameter's normal
-				 * behavior. Matching is defined in the same way it is for
-				 * the 'agent' parameter.
-				 */
+			related_agents := r.FormValue("related_agents")
+			if related_agents != "" && related_agents == "true" {
+				aq = append(aq, bson.M{"Object.Actor": actor})
+				aq = append(aq, bson.M{"Context.Instructor": actor})
+				aq = append(aq, bson.M{"Object.Context.Instructor": actor})
+				aq = append(aq, bson.M{"Object.Context.Team": actor})
 			}
+
+			q["$or"] = aq
 		}
 
 		if activity := r.FormValue("activity"); activity != "" {
-			q["Activity"] = activity
+
+			activq := []bson.M{bson.M{"Object.Id":activity}}
+
 			findInRef = true
-			if related_activities := r.FormValue("related_activities"); related_activities != "" {
-				/* bool
-				 * Apply the Activity filter broadly. Include Statements
-				 * for which the Object, any of the context Activities,
-				 * or any of those properties in a contained SubStatement
-				 * match the Activity parameter, instead of that parameter's
-				 * normal behavior. Matching is defined in the same way it is
-				 * for the 'Activity' parameter."
-				 */
+
+			related_activities := r.FormValue("related_activities")
+			if related_activities != "" && related_activities == "true" {
+				activq = append(activq, bson.M{"Context.ContextActivities": activity})
+				activq = append(activq, bson.M{"Object.Context.ContextActivities": activity})
 			}
+
+			q["$or"] = activq
 		}
 
 		if attachments := r.FormValue("attachments"); attachments != "" {
 		}
 
+		//-StoredVal
 		if ascending := r.FormValue("ascending"); ascending != "" {
+
+		} else {
+
 		}
 
 		if format := r.FormValue("format"); format != "" {
 		}
 
+		// find all statements that refrence the found statments
+		if findInRef {
+			//
+		}
+
 		if limit := r.FormValue("limit"); limit != "" {
 		}
-	}
 
-	// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
-	// based on "stored" time, subject to permissions and maximum list length.
-	// create cache for more statements due to limit
-	// format StatementResult {statements [], more IRL (link to more via querystring if "limit" set)} with list in newest stored first if "ascending" not set
-	// return 200 statementResults with proper header
+		// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
+		// /lrs/util/req_process.py :143
+		// based on "stored" time, subject to permissions and maximum list length.
+		// create cache for more statements due to limit
+		// format StatementResult {statements [], more IRL (link to more via querystring if "limit" set)} with list in newest stored first if "ascending" not set
+
+		// return 200 statementResults with proper header
+	}
 }
 
 // https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
