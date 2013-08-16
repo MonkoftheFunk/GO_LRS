@@ -11,6 +11,7 @@ import (
 	"labix.org/v2/mgo/bson"
 	"net/http"
 	"strings"
+	"strconv"
 	"time"
 )
 
@@ -342,16 +343,23 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 		// complex query
-		// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
 		var q = bson.M{}
+		var tq = []bson.M{}
+
 		if since := r.FormValue("since"); since != "" {
 			t, _ := time.Parse("RFC3339", since)
-			q["StoredVal"] = bson.M{"$gt": t}
+			tq = append(tq,bson.M{"$gt": t})
 		}
 
 		if until := r.FormValue("until"); until != "" {
 			t, _ := time.Parse("RFC3339", until)
-			q["StoredVal"] = bson.M{"$lt": t}
+			tq = append(tq,bson.M{"$lt": t})
+		}
+
+		if len(tq) == 2 {
+		    q["$and"]=[]bson.M{tq[0],tq[1]}
+		}else{
+		    q["StoredVal"] = tq[0]
 		}
 
 		findInRef := false
@@ -409,24 +417,47 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		if attachments := r.FormValue("attachments"); attachments != "" {
 		}
 
-		//-StoredVal
-		if ascending := r.FormValue("ascending"); ascending != "" {
-
-		} else {
-
+		order := "-StoredVal"
+		if ascending := r.FormValue("ascending"); ascending == "true" {
+		    order = "StoredVal"
 		}
 
+		//how can I control formating
 		if format := r.FormValue("format"); format != "" {
 		}
 
 		// find all statements that refrence the found statments
+		// requery with original query and appended query
 		if findInRef {
 			//
 		}
 
-		if limit := r.FormValue("limit"); limit != "" {
+		limit := r.FormValue("limit");
+		if limit == "" {
+		   limit = "0"
 		}
 
+		//convert limit string to int
+		i, err := strconv.Atoi(limit)
+        if err != nil {
+            w.WriteHeader(http.StatusBadRequest)
+        }
+
+		// connect to db
+		session := dbSession()
+		defer session.Close()
+		statementsC := session.DB("LRS").C("statements")
+
+		var result []Statement
+		err = statementsC.Find(q).Sort(order).
+		    Limit(i).
+		    All(&result)
+		if err != nil {
+			// fmt.Fprint(w, err)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+
+		// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
 		// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
 		// /lrs/util/req_process.py :143
 		// based on "stored" time, subject to permissions and maximum list length.
@@ -436,6 +467,25 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		// return 200 statementResults with proper header
 	}
 }
+
+/*
+ * def findstmtrefs(stmtset, sinceq, untilq):
+    if stmtset.count() == 0:
+        return stmtset
+    q = Q()
+    for s in stmtset:
+        q = q | Q(object_statementref__ref_id=s.statement_id)
+
+    if sinceq and untilq:
+        q = q & Q(sinceq, untilq)
+    elif sinceq:
+        q = q & sinceq
+    elif untilq:
+        q = q & untilq
+    # finally weed out voided statements in this lookup
+    q = q & Q(voided=False)
+    return findstmtrefs(models.Statement.objects.filter(q).distinct(), sinceq, untilq) | stmtset
+*/
 
 // https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
 // http://zackpierce.github.io/xAPI-Validator-JS/
