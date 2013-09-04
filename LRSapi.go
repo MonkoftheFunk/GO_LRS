@@ -1,3 +1,8 @@
+/**
+ * GO_LRS
+ * https://github.com/MonkoftheFunk/GO_LRS
+ */
+
 package main
 
 import (
@@ -10,8 +15,8 @@ import (
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"net/http"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -21,7 +26,7 @@ func main() {
 	r.Path("/statements/").Methods("POST").HandlerFunc(PostStatement)
 	r.Path("/statements/").Methods("PUT").HandlerFunc(PutStatement)
 	r.Path("/statements/").Methods("GET").HandlerFunc(GetStatement)
-
+	r.Path("/statements/").Methods("DELETE").HandlerFunc(DelStatement)
 	http.Handle("/", r)
 	http.ListenAndServe(":8080", nil)
 }
@@ -54,7 +59,6 @@ func readStmts(r io.Reader) (bool, string, error) {
 }
 
 func PostStatement(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
 
 	// check if post is being used as a put
 	statementId := r.FormValue("statementId")
@@ -63,8 +67,16 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Add("x-experience-api-version", "1.0")
+	defer r.Body.Close()
+
 	// determin if array of statements or just single statement
-	isArray, body, _ := readStmts(r.Body)
+	isArray, body, err := readStmts(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	decoder := json.NewDecoder(strings.NewReader(body))
 
 	var statements []Statement
@@ -73,6 +85,7 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			//fmt.Fprint(w, err)
 			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 	} else {
 		var statement Statement
@@ -80,6 +93,7 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			// fmt.Fprint(w, err)
 			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		statements = append(statements, statement)
 	}
@@ -107,6 +121,7 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 			// fmt.Fprint(w, err)
 			return
 		}
+
 		// output new ids
 		sids = append(sids, sid)
 
@@ -124,7 +139,6 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 
 	// return 200 with statement id(s), same order index
 	w.Header().Add("Content-Type", "application/json")
-	w.Header().Add("X-Experience-API-Version", "1.0")
 	w.WriteHeader(http.StatusOK)
 
 	enc := json.NewEncoder(w)
@@ -133,6 +147,8 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 }
 
 func PutStatement(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("x-experience-api-version", "1.0")
+	defer r.Body.Close()
 
 	// verify statementId passed in
 	statementId := r.FormValue("statementId")
@@ -142,12 +158,12 @@ func PutStatement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	decoder := json.NewDecoder(r.Body)
-	defer r.Body.Close()
 
 	var s Statement
 	err := decoder.Decode(&s)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
+		// fmt.Fprint(w, "decode error")
 		// fmt.Fprint(w, err)
 		return
 	}
@@ -185,19 +201,45 @@ func PutStatement(w http.ResponseWriter, r *http.Request) {
 	statementsC.Insert(s)
 
 	// no response back
+	w.WriteHeader(http.StatusNoContent)
 	return
 }
 
 func checkSpecialActionVerbs(w http.ResponseWriter, statementsC *mgo.Collection, statement Statement) int {
+
 	//voiding
 	if statement.Verb.Id == "http://adlnet.gov/expapi/verbs/voided" {
 
 		// check has statementId to void
 		if statement.Object.ObjectType != "StatementRef" {
-			//fmt.Fprint(w, "StatementRef")
+			// fmt.Fprint(w, "StatementRef")
 			return http.StatusBadRequest
 		}
 
+		if statement.Object.Id == "" {
+			// fmt.Fprint(w, "Object.Id")
+			return http.StatusBadRequest
+		}
+
+		// find if statement to be voided exists
+		var result Statement
+		err := statementsC.Find(bson.M{"id": statement.Object.Id}).One(&result)
+		if err != nil {
+			// fmt.Fprint(w, "not found refrence"+statement.Object.Id)
+			// fmt.Fprint(w, err)
+			return http.StatusBadRequest
+		}
+
+		// if statement hasn't been voided do so
+		if result.Void != true {
+			err = statementsC.Update(bson.M{"id": result.Id}, bson.M{"$set": bson.M{"void": true}})
+			if err != nil {
+				// fmt.Fprint(w, "cant update")
+				//fmt.Fprint(w, err)
+				return http.StatusBadRequest
+			}
+		}
+	} else if statement.Object.ObjectType == "StatementRef" { //check if statement's ref exists (might be moved to validate)
 		if statement.Object.Id == "" {
 			//fmt.Fprint(w, "Object.Id")
 			return http.StatusBadRequest
@@ -209,16 +251,6 @@ func checkSpecialActionVerbs(w http.ResponseWriter, statementsC *mgo.Collection,
 		if err != nil {
 			//fmt.Fprint(w, "not found refrence")
 			return http.StatusBadRequest
-		}
-
-		// if statement hasn't been voided do so
-		if result.Void != true {
-			err = statementsC.Update(bson.M{"id": result.Id}, bson.M{"$set": bson.M{"void": true}})
-			if err != nil {
-				//fmt.Fprint(w, "cant update")
-				//fmt.Fprint(w, err)
-				return http.StatusBadRequest
-			}
 		}
 	}
 	return 0
@@ -248,6 +280,9 @@ func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, st
 
 		for _, s := range result {
 			// can't compare structs with arrays/maps
+			// kludge the result has "stored" so add field for comparison
+			s.Stored = Lkup[s.Id].Stored
+
 			rj, _ := json.Marshal(Lkup[s.Id])
 			sj, _ := json.Marshal(s)
 			if string(rj) != string(sj) {
@@ -268,9 +303,13 @@ func checkIdConflict(w http.ResponseWriter, statementsC *mgo.Collection, stateme
 			return 0
 		}
 
+		// kludge the result has "stored" so add field for comparison
+		statement.Stored = result.Stored
+
 		// can't compare structs with arrays/maps
 		rj, _ := json.Marshal(result)
 		sj, _ := json.Marshal(statement)
+
 		if string(rj) != string(sj) {
 			return http.StatusConflict
 		}
@@ -278,7 +317,31 @@ func checkIdConflict(w http.ResponseWriter, statementsC *mgo.Collection, stateme
 	return 0
 }
 
+func DelStatement(w http.ResponseWriter, r *http.Request) {
+	// todo serious auth checks
+	statementId := r.FormValue("statementId")
+	if statementId == "" {
+		//fmt.Fprint(w, "no id")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// connect to db
+	session := dbSession()
+	defer session.Close()
+	statementsC := session.DB("LRS").C("statements")
+
+	// del statement
+	err := statementsC.Remove(bson.M{"id": statementId})
+	if err != nil {
+		// fmt.Fprint(w, err)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+}
+
 func GetStatement(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("x-experience-api-version", "1.0")
 
 	// --validate
 	// check if format ['exact', 'canonical', 'ids'] default exact
@@ -291,8 +354,10 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 	// check if	contain both statementId and voidedStatementId parameters then 400
 	statementId := r.FormValue("statementId")
 	voidedStatementId := r.FormValue("voidedStatementId")
-	if statementId != "" && voidedStatementId != "" {
+	if statementId == "" && voidedStatementId == "" {
+		//fmt.Fprint(w, "no id")
 		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 
 	// if single query
@@ -304,7 +369,9 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		for _, p := range parameters_NotAllowed {
 			param := r.FormValue(p)
 			if param != "" {
+				// fmt.Fprint(w, "not allowed another filter")
 				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 		}
 
@@ -323,24 +390,25 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		var result Statement
 		err := statementsC.Find(bson.M{"id": statementId}).One(&result)
 		if err != nil {
-			// fmt.Fprint(w, err)
-			w.WriteHeader(http.StatusBadRequest)
+			//fmt.Fprint(w, err)
+			w.WriteHeader(http.StatusNotFound)
+			return
 		}
 
 		// The LRS MUST not return any Statement which has been voided,
 		// unless that Statement has been requested by voidedStatementId.
 		if result.Void != voided {
-			// fmt.Fprint(w, "result: void="+result.Void+" request void="+voided)
-			w.WriteHeader(http.StatusBadRequest)
+			//fmt.Fprint(w, "result: void=")
+			w.WriteHeader(http.StatusNotFound)
+			return
 		}
 
 		// return back found statement
 		w.Header().Add("Content-Type", "application/json")
-		w.Header().Add("X-Experience-API-Version", "1.0")
 		w.WriteHeader(http.StatusOK)
 		enc := json.NewEncoder(w)
 		enc.Encode(result)
-
+		return
 	} else {
 		// complex query
 		var q = bson.M{}
@@ -348,18 +416,18 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 
 		if since := r.FormValue("since"); since != "" {
 			t, _ := time.Parse("RFC3339", since)
-			tq = append(tq,bson.M{"$gt": t})
+			tq = append(tq, bson.M{"$gt": t})
 		}
 
 		if until := r.FormValue("until"); until != "" {
 			t, _ := time.Parse("RFC3339", until)
-			tq = append(tq,bson.M{"$lt": t})
+			tq = append(tq, bson.M{"$lt": t})
 		}
 
 		if len(tq) == 2 {
-		    q["$and"]=[]bson.M{tq[0],tq[1]}
-		}else{
-		    q["StoredVal"] = tq[0]
+			q["$and"] = []bson.M{tq[0], tq[1]}
+		} else if len(tq) == 1 {
+			q["StoredVal"] = tq[0]
 		}
 
 		findInRef := false
@@ -381,6 +449,7 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				// fmt.Fprint(w, err)
 				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 
 			aq := []bson.M{bson.M{"Actor": actor},
@@ -401,7 +470,7 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 
 		if activity := r.FormValue("activity"); activity != "" {
 
-			activq := []bson.M{bson.M{"Object.Id":activity}}
+			activq := []bson.M{bson.M{"Object.Id": activity}}
 
 			findInRef = true
 
@@ -419,10 +488,10 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 
 		order := "-StoredVal"
 		if ascending := r.FormValue("ascending"); ascending == "true" {
-		    order = "StoredVal"
+			order = "StoredVal"
 		}
 
-		//how can I control formating
+		//how can I control formating?
 		if format := r.FormValue("format"); format != "" {
 		}
 
@@ -432,16 +501,17 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 			//
 		}
 
-		limit := r.FormValue("limit");
+		limit := r.FormValue("limit")
 		if limit == "" {
-		   limit = "0"
+			limit = "0"
 		}
 
 		//convert limit string to int
 		i, err := strconv.Atoi(limit)
-        if err != nil {
-            w.WriteHeader(http.StatusBadRequest)
-        }
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		// connect to db
 		session := dbSession()
@@ -450,11 +520,12 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 
 		var result []Statement
 		err = statementsC.Find(q).Sort(order).
-		    Limit(i).
-		    All(&result)
+			Limit(i).
+			All(&result)
 		if err != nil {
 			// fmt.Fprint(w, err)
 			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 
 		// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
@@ -508,31 +579,31 @@ func (s *Statement) Validate() (string, int) {
 // -----------------------------------------------------------------
 // import github.com/bitly/go-simplejson maybe instead
 type Statement struct {
-	Id          string
-	Void        bool `json:"-"`
-	Actor       Actor
-	Verb        Verb
-	Object      Object       `bson:",omitempty" json:",omitempty"`
-	Result      Result       `bson:",omitempty" json:",omitempty"`
-	Context     Context      `bson:",omitempty" json:",omitempty"`
-	Timestamp   string       `bson:",omitempty" json:",omitempty"`
-	Stored      string       `bson:",omitempty" json:",omitempty"`
-	StoredVal   time.Time    `bson:",omitempty" json:"-"`
-	Authority   Actor        `bson:",omitempty" json:",omitempty"`
-	Version     string       `bson:",omitempty" json:",omitempty"`
-	Attachments []Attachment `bson:",omitempty" json:",omitempty"`
+	Id          string       `bson:"id,omitempty" json:"id,omitempty"`
+	Void        bool         `json:"-"`
+	Actor       Actor        `bson:"actor,omitempty" json:"actor,omitempty"`
+	Verb        Verb         `bson:"verb,omitempty" json:"verb,omitempty"`
+	Object      Object       `bson:"object,omitempty" json:"object,omitempty"`
+	Result      Result       `bson:"result,omitempty" json:"result,omitempty"`
+	Context     Context      `bson:"context,omitempty" json:"context,omitempty"`
+	Timestamp   string       `bson:"timestamp,omitempty" json:"timestamp,omitempty"`
+	Stored      string       `bson:"stored,omitempty" json:"stored,omitempty"`
+	StoredVal   time.Time    `bson:"storedVal,omitempty" json:"-"`
+	Authority   Actor        `bson:"authority,omitempty" json:"authority,omitempty"`
+	Version     string       `bson:"version,omitempty" json:"version,omitempty"`
+	Attachments []Attachment `bson:"attachments,omitempty" json:"attachments,omitempty"`
 }
 
 // statement
 type Actor struct {
-	ObjectType   string  `bson:",omitempty" json:",omitempty"`
-	Name         string  `bson:",omitempty" json:",omitempty"`
-	Mbox         string  `bson:",omitempty" json:",omitempty"`
-	Mbox_sha1sum string  `bson:",omitempty" json:",omitempty"`
-	OpenID       string  `bson:",omitempty" json:",omitempty"`
-	Account      Account `bson:",omitempty" json:",omitempty"`
+	ObjectType   string  `bson:"objectType,omitempty" json:"objectType,omitempty"`
+	Name         string  `bson:"name,omitempty" json:"name,omitempty"`
+	Mbox         string  `bson:"mbox,omitempty" json:"mbox,omitempty"`
+	Mbox_sha1sum string  `bson:"mbox_sha1sum,omitempty" json:"mbox_sha1sum,omitempty"`
+	OpenID       string  `bson:"openID,omitempty" json:"openID,omitempty"`
+	Account      Account `bson:"account,omitempty" json:"account,omitempty"`
 	// group
-	Member []Actor `bson:",omitempty" json:",omitempty"`
+	Member []Actor `bson:"member,omitempty" json:"member,omitempty"`
 }
 
 // actor
@@ -547,106 +618,113 @@ type Agent struct {
 
 // actor
 type Account struct {
-	HomePage string
-	Name     string
+	HomePage string `bson:"homePage,omitempty" json:"homePage,omitempty"`
+	Name     string `bson:"name,omitempty" json:"name,omitempty"`
 }
 
 // statement
 type Verb struct {
-	Id      string
-	Display map[string]string
+	Id      string            `bson:"id,omitempty" json:"id,omitempty"`
+	Display map[string]string `bson:"display,omitempty" json:"display,omitempty"`
 }
 
 // activity, Agent/Group, Sub-Statement, StatementReference
 type Object struct {
-	ObjectType string     `bson:",omitempty" json:",omitempty"`
-	Id         string     `bson:",omitempty" json:",omitempty"`
-	Definition Definition `bson:",omitempty" json:",omitempty"`
+	ObjectType string     `bson:"objectType,omitempty" json:"objectType,omitempty"`
+	Id         string     `bson:"id,omitempty" json:"id,omitempty"`
+	Definition Definition `bson:"definition,omitempty" json:"definition,omitempty"`
 	// substatement
-	Actor       Actor        `bson:",omitempty" json:",omitempty"`
-	Verb        Verb         `bson:",omitempty" json:",omitempty"`
-	Object      StatementRef `bson:",omitempty" json:",omitempty"`
-	Result      Result       `bson:",omitempty" json:",omitempty"`
-	Context     Context      `bson:",omitempty" json:",omitempty"`
-	Timestamp   string       `bson:",omitempty" json:",omitempty"`
-	Stored      string       `bson:",omitempty" json:",omitempty"`
-	Authority   Actor        `bson:",omitempty" json:",omitempty"`
-	Version     string       `bson:",omitempty" json:",omitempty"`
-	Attachments []Attachment `bson:",omitempty" json:",omitempty"`
+	Actor       Actor        `bson:"actor,omitempty" json:"actor,omitempty"`
+	Verb        Verb         `bson:"verb,omitempty" json:"verb,omitempty"`
+	Object      StatementRef `bson:"object,omitempty" json:"object,omitempty"`
+	Result      Result       `bson:"result,omitempty" json:"result,omitempty"`
+	Context     Context      `bson:"context,omitempty" json:"context,omitempty"`
+	Timestamp   string       `bson:"timestamp,omitempty" json:"timestamp,omitempty"`
+	Stored      string       `bson:"stored,omitempty" json:"stored,omitempty"`
+	StoredVal   time.Time    `bson:"storedVal,omitempty" json:"-"`
+	Authority   Actor        `bson:"authority,omitempty" json:"authority,omitempty"`
+	Version     string       `bson:"version,omitempty" json:"version,omitempty"`
+	Attachments []Attachment `bson:"attachments,omitempty" json:"attachments,omitempty"`
 }
 
 // object
 type Definition struct {
-	Name        map[string]string
-	Description map[string]string
-	Type        string
-	MoreInfo    string
-	Interaction Interaction
-	Extensions  map[string]interface{}
+	Name                    map[string]string       `bson:"name,omitempty" json:"name,omitempty"`
+	Description             map[string]string       `bson:"description,omitempty" json:"description,omitempty"`
+	Type                    string                  `bson:"type,omitempty" json:"type,omitempty"`
+	MoreInfo                string                  `bson:"moreInfo,omitempty" json:"moreInfo,omitempty"`
+	InteractionType         string                  `bson:"interactionType,omitempty" json:"interactionType,omitempty"`
+	CorrectResponsesPattern []string                `bson:"correctResponsesPattern,omitempty" json:"correctResponsesPattern,omitempty"`
+	Choices                 []InteractionComponents `bson:"choices,omitempty" json:"choices,omitempty"`
+	Scale                   []InteractionComponents `bson:"scale,omitempty" json:"scale,omitempty"`
+	Source                  []InteractionComponents `bson:"source,omitempty" json:"source,omitempty"`
+	Target                  []InteractionComponents `bson:"target,omitempty" json:"target,omitempty"`
+	Steps                   []InteractionComponents `bson:"steps,omitempty" json:"steps,omitempty"`
+	Extensions              map[string]interface{}  `bson:"extensions,omitempty" json:"extensions,omitempty"`
 }
 
 // definition
 type Interaction struct {
-	InteractionType         string
-	CorrectResponsesPattern []string
-	choices                 []InteractionComponents `bson:",omitempty" json:",omitempty"`
-	scale                   []InteractionComponents `bson:",omitempty" json:",omitempty"`
-	source                  []InteractionComponents `bson:",omitempty" json:",omitempty"`
-	target                  []InteractionComponents `bson:",omitempty" json:",omitempty"`
-	steps                   []InteractionComponents `bson:",omitempty" json:",omitempty"`
+	InteractionType         string                  `bson:"interactionType,omitempty" json:"interactionType,omitempty"`
+	CorrectResponsesPattern []string                `bson:"correctResponsesPattern,omitempty" json:"correctResponsesPattern,omitempty"`
+	Choices                 []InteractionComponents `bson:"choices,omitempty" json:"choices,omitempty"`
+	Scale                   []InteractionComponents `bson:"scale,omitempty" json:"scale,omitempty"`
+	Source                  []InteractionComponents `bson:"source,omitempty" json:"source,omitempty"`
+	Target                  []InteractionComponents `bson:"target,omitempty" json:"target,omitempty"`
+	Steps                   []InteractionComponents `bson:"steps,omitempty" json:"steps,omitempty"`
 }
 
 // interaction
 type InteractionComponents struct {
-	Id          string
-	Description map[string]string
+	Id          string            `bson:"id,omitempty" json:"id,omitempty"`
+	Description map[string]string `bson:"description,omitempty" json:"description,omitempty"`
 }
 
 // statement
 type Result struct {
-	Score      Score
-	Success    bool
-	Completion bool
-	Response   string
-	Duration   string
-	Extensions map[string]interface{}
+	Score      Score                  `bson:"score,omitempty" json:"score,omitempty"`
+	Success    bool                   `bson:"success,omitempty" json:"success,omitempty"`
+	Completion bool                   `bson:"completion,omitempty" json:"completion,omitempty"`
+	Response   string                 `bson:"response,omitempty" json:"response,omitempty"`
+	Duration   string                 `bson:"duration,omitempty" json:"duration,omitempty"`
+	Extensions map[string]interface{} `bson:"extensions,omitempty" json:"extensions,omitempty"`
 }
 
 // result
 type Score struct {
-	Scaled int
-	Raw    float32
-	Min    float32
-	Max    float32
+	Scaled float32 `bson:"scaled" json:"scaled"`
+	Raw    float32 `bson:"raw" json:"raw"`
+	Min    float32 `bson:"min" json:"min"`
+	Max    float32 `bson:"max" json:"max"`
 }
 
 // statement
 type Context struct {
-	Registration      string
-	Instructor        Actor
-	Team              Actor
-	ContextActivities map[string]interface{}
-	Revision          string
-	Platform          string
-	Language          string
-	Statement         StatementRef
-	Extensions        map[string]interface{}
+	Registration      string                 `bson:"registration,omitempty" json:"registration,omitempty"`
+	Instructor        Actor                  `bson:"instructor,omitempty" json:"instructor,omitempty"`
+	Team              Actor                  `bson:"team,omitempty" json:"team,omitempty"`
+	ContextActivities map[string]interface{} `bson:"contextActivities,omitempty" json:"contextActivities,omitempty"`
+	Revision          string                 `bson:"revision,omitempty" json:"revision,omitempty"`
+	Platform          string                 `bson:"platform,omitempty" json:"platform,omitempty"`
+	Language          string                 `bson:"language,omitempty" json:"language,omitempty"`
+	Statement         StatementRef           `bson:"statement,omitempty" json:"statement,omitempty"`
+	Extensions        map[string]interface{} `bson:"extensions,omitempty" json:"extensions,omitempty"`
 }
 
 // context
 type StatementRef struct {
-	ObjectType string
-	Id         string
-	Definition Definition `json:",omitempty"`
+	ObjectType string     `bson:"objectType,omitempty" json:"objectType,omitempty"`
+	Id         string     `bson:"id,omitempty" json:"id,omitempty"`
+	Definition Definition `bson:"definition,omitempty" json:"definition,omitempty"`
 }
 
 // statement
 type Attachment struct {
-	UsageType   string
-	Display     map[string]string
-	Description map[string]string `json:",omitempty"`
-	ContentType string
-	Length      int
-	Sha2        string
-	FileUrl     string `json:",omitempty"`
+	UsageType   string            `bson:"usageType,omitempty" json:"usageType,omitempty"`
+	Display     map[string]string `bson:"display,omitempty" json:"display,omitempty"`
+	Description map[string]string `bson:"description,omitempty" json:"description,omitempty"`
+	ContentType string            `bson:"contentType,omitempty" json:"contentType,omitempty"`
+	Length      int               `bson:"length,omitempty" json:"length,omitempty"`
+	Sha2        string            `bson:"sha2,omitempty" json:"sha2,omitempty"`
+	FileUrl     string            `bson:"fileUrl,omitempty" json:"fileUrl,omitempty"`
 }

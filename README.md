@@ -25,9 +25,11 @@ Done:
 In Progress:
 * GET complex query
 * GET more query due to limit
-* REST Unit Tests
+* [REST API Tests](https://github.com/MonkoftheFunk/LRS_Validator)
 * Deal with attachments
 * Auth and Cross Origin Requests
+* Concurrency
+* Statement Validation
 
 Not production ready
 
@@ -44,6 +46,7 @@ Lots of help from these resources:
 * [xAPI spec doc](https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md)
 * [ADL's Python LRS](https://github.com/adlnet/ADL_LRS)
 * [Requires MongoDB](http://www.mongodb.org/)
+* [LRS Requirements](https://github.com/creighton/try_git/blob/master/lrs_requirements.md)
 
 Other Useful Resources:
 * [REST API Testing tool](http://www.getpostman.com/)
