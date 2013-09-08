@@ -410,154 +410,223 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		enc.Encode(result)
 		return
 	} else {
-		// complex query
-		var q = bson.M{}
-		var tq = []bson.M{}
+	    complexQuery(w,r)
+	    return
+	}
 
-		if since := r.FormValue("since"); since != "" {
-			t, _ := time.Parse("RFC3339", since)
-			tq = append(tq, bson.M{"$gt": t})
-		}
+}
 
-		if until := r.FormValue("until"); until != "" {
-			t, _ := time.Parse("RFC3339", until)
-			tq = append(tq, bson.M{"$lt": t})
-		}
+func complexQuery(w http.ResponseWriter, r *http.Request) {
+	var q = bson.M{}
+	var tq = []bson.M{}
 
-		if len(tq) == 2 {
-			q["$and"] = []bson.M{tq[0], tq[1]}
-		} else if len(tq) == 1 {
-			q["StoredVal"] = tq[0]
-		}
+	if since := r.FormValue("since"); since != "" {
+		t, _ := time.Parse("RFC3339", since)
+		tq = append(tq, bson.M{"$gt": t})
+	}
 
-		findInRef := false
-		if verb := r.FormValue("verb"); verb != "" {
-			q["Verb"] = verb
-			findInRef = true
-		}
+	if until := r.FormValue("until"); until != "" {
+		t, _ := time.Parse("RFC3339", until)
+		tq = append(tq, bson.M{"$lt": t})
+	}
 
-		if registration := r.FormValue("registration"); registration != "" {
-			q["Registration"] = registration
-			findInRef = true
-		}
+	if len(tq) == 2 {
+		q["$and"] = []bson.M{tq[0], tq[1]}
+	} else if len(tq) == 1 {
+		q["StoredVal"] = tq[0]
+	}
 
-		if agent := r.FormValue("agent"); agent != "" {
-			// JSONObject, Compare optional Identifiers
-			var actor Actor
-			decoder := json.NewDecoder(strings.NewReader(agent))
-			err := decoder.Decode(&actor)
-			if err != nil {
-				// fmt.Fprint(w, err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
+	findInRef := false
+	if verb := r.FormValue("verb"); verb != "" {
+		q["Verb"] = verb
+		findInRef = true
+	}
 
-			aq := []bson.M{bson.M{"Actor": actor},
-				bson.M{"Actor.Member": actor}}
+	if registration := r.FormValue("registration"); registration != "" {
+		q["Registration"] = registration
+		findInRef = true
+	}
 
-			findInRef = true
-
-			related_agents := r.FormValue("related_agents")
-			if related_agents != "" && related_agents == "true" {
-				aq = append(aq, bson.M{"Object.Actor": actor})
-				aq = append(aq, bson.M{"Context.Instructor": actor})
-				aq = append(aq, bson.M{"Object.Context.Instructor": actor})
-				aq = append(aq, bson.M{"Object.Context.Team": actor})
-			}
-
-			q["$or"] = aq
-		}
-
-		if activity := r.FormValue("activity"); activity != "" {
-
-			activq := []bson.M{bson.M{"Object.Id": activity}}
-
-			findInRef = true
-
-			related_activities := r.FormValue("related_activities")
-			if related_activities != "" && related_activities == "true" {
-				activq = append(activq, bson.M{"Context.ContextActivities": activity})
-				activq = append(activq, bson.M{"Object.Context.ContextActivities": activity})
-			}
-
-			q["$or"] = activq
-		}
-
-		if attachments := r.FormValue("attachments"); attachments != "" {
-		}
-
-		order := "-StoredVal"
-		if ascending := r.FormValue("ascending"); ascending == "true" {
-			order = "StoredVal"
-		}
-
-		//how can I control formating?
-		if format := r.FormValue("format"); format != "" {
-		}
-
-		// find all statements that refrence the found statments
-		// requery with original query and appended query
-		if findInRef {
-			//
-		}
-
-		limit := r.FormValue("limit")
-		if limit == "" {
-			limit = "0"
-		}
-
-		//convert limit string to int
-		i, err := strconv.Atoi(limit)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		// connect to db
-		session := dbSession()
-		defer session.Close()
-		statementsC := session.DB("LRS").C("statements")
-
-		var result []Statement
-		err = statementsC.Find(q).Sort(order).
-			Limit(i).
-			All(&result)
+	if agent := r.FormValue("agent"); agent != "" {
+		// JSONObject, Compare optional Identifiers
+		var actor Actor
+		decoder := json.NewDecoder(strings.NewReader(agent))
+		err := decoder.Decode(&actor)
 		if err != nil {
 			// fmt.Fprint(w, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
-		// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
-		// /lrs/util/req_process.py :143
-		// based on "stored" time, subject to permissions and maximum list length.
-		// create cache for more statements due to limit
-		// format StatementResult {statements [], more IRL (link to more via querystring if "limit" set)} with list in newest stored first if "ascending" not set
+		aq := []bson.M{bson.M{"Actor": actor},
+			bson.M{"Actor.Member": actor}}
 
-		// return 200 statementResults with proper header
+		findInRef = true
+
+		related_agents := r.FormValue("related_agents")
+		if related_agents != "" && related_agents == "true" {
+			aq = append(aq, bson.M{"Object.Actor": actor})
+			aq = append(aq, bson.M{"Context.Instructor": actor})
+			aq = append(aq, bson.M{"Object.Context.Instructor": actor})
+			aq = append(aq, bson.M{"Object.Context.Team": actor})
+		}
+
+		q["$or"] = aq
 	}
+
+	if activity := r.FormValue("activity"); activity != "" {
+
+		activq := []bson.M{bson.M{"Object.Id": activity}}
+
+		findInRef = true
+
+		related_activities := r.FormValue("related_activities")
+		if related_activities != "" && related_activities == "true" {
+			activq = append(activq, bson.M{"Context.ContextActivities": activity})
+			activq = append(activq, bson.M{"Object.Context.ContextActivities": activity})
+		}
+
+		q["$or"] = activq
+	}
+
+	if attachments := r.FormValue("attachments"); attachments != "" {
+	    //todo
+	}
+
+	order := "-StoredVal"
+	if ascending := r.FormValue("ascending"); ascending == "true" {
+		order = "StoredVal"
+	}
+
+	//how can I control formating?
+	if format := r.FormValue("format"); format != "" {
+	    //todo
+	}
+
+	// find all statements that refrence the found statments
+	// requery with original query and appended query
+	if findInRef {
+        session := dbSession()
+        defer session.Close()
+        statementsC := session.DB("LRS").C("statements")
+
+        var result []Statement
+        // distinct? if so what field to base that on?
+        err := statementsC.Find(q).All(&result)
+        if err != nil {
+        	// fmt.Fprint(w, err
+        	w.WriteHeader(http.StatusBadRequest)
+        	return
+        }
+
+		qr := bson.M{}
+		if q["$and"] != nil{
+			err = findStatementRefs(result, tq[0], tq[1], &qr)
+		    q["$and"] = bson.M{"$and":qr}
+		}else{
+			err = findStatementRefs(result, tq[0], tq[1], &qr)
+		    q["$and"] = qr
+		}
+
+	}
+
+	limit := r.FormValue("limit")
+	if limit == "" {
+		limit = "0"
+	}
+
+	//convert limit string to int
+	i, err := strconv.Atoi(limit)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// connect to db
+	session := dbSession()
+	defer session.Close()
+	statementsC := session.DB("LRS").C("statements")
+
+	var result []Statement
+	err = statementsC.Find(q).Sort(order).
+		Limit(i).
+		All(&result)
+	if err != nil {
+		// fmt.Fprint(w, err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
+	// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
+	// /lrs/util/req_process.py :143
+	// based on "stored" time, subject to permissions and maximum list length.
+	// create cache for more statements due to limit
+	// format StatementResult {statements [], more IRL (link to more via querystring if "limit" set)} with list in newest stored first if "ascending" not set
+
+	// return back found statement
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	enc.Encode(result)
 }
 
-/*
- * def findstmtrefs(stmtset, sinceq, untilq):
-    if stmtset.count() == 0:
-        return stmtset
-    q = Q()
-    for s in stmtset:
-        q = q | Q(object_statementref__ref_id=s.statement_id)
+func findStatementRefs(stmtset []Statement , sinceq bson.M, untilq bson.M, q *bson.M) (error){
 
-    if sinceq and untilq:
-        q = q & Q(sinceq, untilq)
-    elif sinceq:
-        q = q & sinceq
-    elif untilq:
-        q = q & untilq
-    # finally weed out voided statements in this lookup
-    q = q & Q(voided=False)
-    return findstmtrefs(models.Statement.objects.filter(q).distinct(), sinceq, untilq) | stmtset
-*/
+    // stop searching for refrence of refrence if none left
+    if len(stmtset) == 0{
+        return nil
+    }
 
+    // go through all statements that match criteria
+    // and add to query to find anything that refrences' them
+    qs := []bson.M{}
+    for _,s := range stmtset{
+        qs = append(qs,bson.M{"Object.ObjectType":"StatementRef","Object.Id":s.Id})
+    }
+    qs = []bson.M{bson.M{"$or":qs}}
+
+    //statements refrenced also must adhere to time frame
+    if sinceq  != nil && untilq != nil {
+        qs = append(qs,sinceq)
+        qs = append(qs,untilq)
+    }else if sinceq != nil {
+        qs = append(qs, sinceq)
+    }else if untilq != nil {
+        qs = append(qs, untilq)
+    }
+
+    // finally weed out voided statements in this lookup
+    qs = append(qs, bson.M{"Void":false})
+
+    // connect to db
+    session := dbSession()
+    defer session.Close()
+    statementsC := session.DB("LRS").C("statements")
+
+    var result []Statement
+    // distinct? if so what field to base that on?
+    err := statementsC.Find(qs).All(&result)
+    if err != nil {
+    	// fmt.Fprint(w, err
+    	//w.WriteHeader(http.StatusBadRequest)
+    	return err
+    }
+    err = findStatementRefs(result, sinceq, untilq, q)
+
+    *q = bson.M{"$or":[]bson.M{
+        bson.M{"$and":qs},
+        *q}}
+
+    return err
+}
+
+func concatBson(old1, old2 []bson.M) []bson.M {
+   newslice := make([]bson.M, len(old1) + len(old2))
+   copy(newslice, old1)
+   copy(newslice[len(old1):], old2)
+   return newslice
+}
 // https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
 // http://zackpierce.github.io/xAPI-Validator-JS/
 // not sure how much if/howmuch I will validate structure
