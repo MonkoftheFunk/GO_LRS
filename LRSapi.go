@@ -360,60 +360,63 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// if single query
-	// then make sure other parameters are not called
 	if statementId != "" || voidedStatementId != "" {
-		parameters_NotAllowed := []string{"agent", "verb", "activity",
-			"registration", "related_activities",
-			"since", "until", "limit", "ascending"}
-		for _, p := range parameters_NotAllowed {
-			param := r.FormValue(p)
-			if param != "" {
-				// fmt.Fprint(w, "not allowed another filter")
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-		}
-
-		voided := false
-		if voidedStatementId != "" {
-			statementId = voidedStatementId
-			voided = true
-		}
-
-		// connect to db
-		session := dbSession()
-		defer session.Close()
-		statementsC := session.DB("LRS").C("statements")
-
-		// find statement
-		var result Statement
-		err := statementsC.Find(bson.M{"id": statementId}).One(&result)
-		if err != nil {
-			//fmt.Fprint(w, err)
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		// The LRS MUST not return any Statement which has been voided,
-		// unless that Statement has been requested by voidedStatementId.
-		if result.Void != voided {
-			//fmt.Fprint(w, "result: void=")
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		// return back found statement
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		enc := json.NewEncoder(w)
-		enc.Encode(result)
+		singleQuery(w, r, statementId, voidedStatementId)
 		return
 	} else {
-	    complexQuery(w,r)
-	    return
+		complexQuery(w, r)
+		return
+	}
+}
+
+func singleQuery(w http.ResponseWriter, r *http.Request, statementId string, voidedStatementId string) {
+	parameters_NotAllowed := []string{"agent", "verb", "activity",
+		"registration", "related_activities",
+		"since", "until", "limit", "ascending"}
+	for _, p := range parameters_NotAllowed {
+		param := r.FormValue(p)
+		if param != "" {
+			// fmt.Fprint(w, "not allowed another filter")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 	}
 
+	voided := false
+	if voidedStatementId != "" {
+		statementId = voidedStatementId
+		voided = true
+	}
+
+	// connect to db
+	session := dbSession()
+	defer session.Close()
+	statementsC := session.DB("LRS").C("statements")
+
+	// find statement
+	var result Statement
+	err := statementsC.Find(bson.M{"id": statementId}).One(&result)
+	if err != nil {
+		//fmt.Fprint(w, err)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// The LRS MUST not return any Statement which has been voided,
+	// unless that Statement has been requested by voidedStatementId.
+	if result.Void != voided {
+		//fmt.Fprint(w, "result: void=")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// return back found statement
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	enc.Encode(result)
+
+	return
 }
 
 func complexQuery(w http.ResponseWriter, r *http.Request) {
@@ -490,7 +493,7 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if attachments := r.FormValue("attachments"); attachments != "" {
-	    //todo
+		//todo
 	}
 
 	order := "-StoredVal"
@@ -500,32 +503,32 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 
 	//how can I control formating?
 	if format := r.FormValue("format"); format != "" {
-	    //todo
+		//todo
 	}
 
 	// find all statements that refrence the found statments
 	// requery with original query and appended query
 	if findInRef {
-        session := dbSession()
-        defer session.Close()
-        statementsC := session.DB("LRS").C("statements")
+		session := dbSession()
+		defer session.Close()
+		statementsC := session.DB("LRS").C("statements")
 
-        var result []Statement
-        // distinct? if so what field to base that on?
-        err := statementsC.Find(q).All(&result)
-        if err != nil {
-        	// fmt.Fprint(w, err
-        	w.WriteHeader(http.StatusBadRequest)
-        	return
-        }
+		var result []Statement
+		// distinct? if so what field to base that on?
+		err := statementsC.Find(q).All(&result)
+		if err != nil {
+			// fmt.Fprint(w, err
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		qr := bson.M{}
-		if q["$and"] != nil{
+		if q["$and"] != nil {
 			err = findStatementRefs(result, tq[0], tq[1], &qr)
-		    q["$and"] = bson.M{"$and":qr}
-		}else{
+			q["$and"] = bson.M{"$and": qr}
+		} else {
 			err = findStatementRefs(result, tq[0], tq[1], &qr)
-		    q["$and"] = qr
+			q["$and"] = qr
 		}
 
 	}
@@ -571,62 +574,53 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 	enc.Encode(result)
 }
 
-func findStatementRefs(stmtset []Statement , sinceq bson.M, untilq bson.M, q *bson.M) (error){
+func findStatementRefs(stmtset []Statement, sinceq bson.M, untilq bson.M, q *bson.M) error {
 
-    // stop searching for refrence of refrence if none left
-    if len(stmtset) == 0{
-        return nil
-    }
+	// stop searching for refrence of refrence if none left
+	if len(stmtset) == 0 {
+		return nil
+	}
 
-    // go through all statements that match criteria
-    // and add to query to find anything that refrences' them
-    qs := []bson.M{}
-    for _,s := range stmtset{
-        qs = append(qs,bson.M{"Object.ObjectType":"StatementRef","Object.Id":s.Id})
-    }
-    qs = []bson.M{bson.M{"$or":qs}}
+	// go through all statements that match criteria
+	// and add to query to find anything that refrences' them
+	qs := []bson.M{}
+	for _, s := range stmtset {
+		qs = append(qs, bson.M{"Object.ObjectType": "StatementRef", "Object.Id": s.Id})
+	}
+	qs = []bson.M{bson.M{"$or": qs}}
 
-    //statements refrenced also must adhere to time frame
-    if sinceq  != nil && untilq != nil {
-        qs = append(qs,sinceq)
-        qs = append(qs,untilq)
-    }else if sinceq != nil {
-        qs = append(qs, sinceq)
-    }else if untilq != nil {
-        qs = append(qs, untilq)
-    }
+	//statements refrenced also must adhere to time frame
+	if sinceq != nil && untilq != nil {
+		qs = append(qs, sinceq)
+		qs = append(qs, untilq)
+	} else if sinceq != nil {
+		qs = append(qs, sinceq)
+	} else if untilq != nil {
+		qs = append(qs, untilq)
+	}
 
-    // finally weed out voided statements in this lookup
-    qs = append(qs, bson.M{"Void":false})
+	// finally weed out voided statements in this lookup
+	qs = append(qs, bson.M{"Void": false})
 
-    // connect to db
-    session := dbSession()
-    defer session.Close()
-    statementsC := session.DB("LRS").C("statements")
+	// connect to db
+	session := dbSession()
+	defer session.Close()
+	statementsC := session.DB("LRS").C("statements")
 
-    var result []Statement
-    // distinct? if so what field to base that on?
-    err := statementsC.Find(qs).All(&result)
-    if err != nil {
-    	// fmt.Fprint(w, err
-    	//w.WriteHeader(http.StatusBadRequest)
-    	return err
-    }
-    err = findStatementRefs(result, sinceq, untilq, q)
+	var result []Statement
+	err := statementsC.Find(qs).Distinct("Id", &result)
+	if err != nil {
+		return err
+	}
+	err = findStatementRefs(result, sinceq, untilq, q)
 
-    *q = bson.M{"$or":[]bson.M{
-        bson.M{"$and":qs},
-        *q}}
+	*q = bson.M{"$or": []bson.M{
+		bson.M{"$and": qs},
+		*q}}
 
-    return err
+	return err
 }
 
-func concatBson(old1, old2 []bson.M) []bson.M {
-   newslice := make([]bson.M, len(old1) + len(old2))
-   copy(newslice, old1)
-   copy(newslice[len(old1):], old2)
-   return newslice
-}
 // https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
 // http://zackpierce.github.io/xAPI-Validator-JS/
 // not sure how much if/howmuch I will validate structure
