@@ -422,7 +422,7 @@ func singleQuery(w http.ResponseWriter, r *http.Request, statementId string, voi
 func complexQuery(w http.ResponseWriter, r *http.Request) {
 	var q = bson.M{}
 	var tq = []bson.M{}
-
+	var and = []bson.M{}
 	if since := r.FormValue("since"); since != "" {
 		t, _ := time.Parse("RFC3339", since)
 		tq = append(tq, bson.M{"$gt": t})
@@ -434,7 +434,7 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(tq) == 2 {
-		q["$and"] = []bson.M{tq[0], tq[1]}
+		q["StoredVal"] = bson.M{"$and": tq}
 	} else if len(tq) == 1 {
 		q["StoredVal"] = tq[0]
 	}
@@ -474,7 +474,7 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 			aq = append(aq, bson.M{"Object.Context.Team": actor})
 		}
 
-		q["$or"] = aq
+		and = append(and, bson.M{"$or":aq})
 	}
 
 	if activity := r.FormValue("activity"); activity != "" {
@@ -489,7 +489,7 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 			activq = append(activq, bson.M{"Object.Context.ContextActivities": activity})
 		}
 
-		q["$or"] = activq
+		and = append(and, bson.M{"$or":activq})
 	}
 
 	if attachments := r.FormValue("attachments"); attachments != "" {
@@ -506,6 +506,8 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		//todo
 	}
 
+	q["$and"] = and
+
 	// find all statements that refrence the found statments
 	// requery with original query and appended query
 	if findInRef {
@@ -513,8 +515,10 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		defer session.Close()
 		statementsC := session.DB("LRS").C("statements")
 
+		// find those that meet criteria
+		// to then find those that refrence them within
+		// the same time frame
 		var result []Statement
-		// distinct? if so what field to base that on?
 		err := statementsC.Find(q).All(&result)
 		if err != nil {
 			// fmt.Fprint(w, err
@@ -523,14 +527,15 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		}
 
 		qr := bson.M{}
-		if q["$and"] != nil {
-			err = findStatementRefs(result, tq[0], tq[1], &qr)
-			q["$and"] = bson.M{"$and": qr}
-		} else {
-			err = findStatementRefs(result, tq[0], tq[1], &qr)
-			q["$and"] = qr
+		err = findStatementRefs(result, tq[0], tq[1], &qr)
+		if err != nil {
+			// fmt.Fprint(w, err
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 
+		and = append(and, qr)
+		q["$and"] = and
 	}
 
 	limit := r.FormValue("limit")
@@ -612,13 +617,17 @@ func findStatementRefs(stmtset []Statement, sinceq bson.M, untilq bson.M, q *bso
 	if err != nil {
 		return err
 	}
+
 	err = findStatementRefs(result, sinceq, untilq, q)
+	if err != nil {
+		return err
+	}
 
 	*q = bson.M{"$or": []bson.M{
 		bson.M{"$and": qs},
 		*q}}
 
-	return err
+	return nil
 }
 
 // https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
