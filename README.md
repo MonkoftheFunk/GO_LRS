@@ -55,7 +55,7 @@ Other Useful Resources:
 * [Tin Can API.com](http://tincanapi.com/)
 * [Tin Can API .co .uk](http://tincanapi.co.uk/)
 * [Bazaar is a version control to download mgo](http://bazaar.canonical.com/en/)
-
+* [skelterjohn/rerun/](https://github.com/skelterjohn/rerun) Very useful, listens for file changes and compiles and closes and re-runs go app. (package uses [howeyc/fsnotify](https://github.com/howeyc/fsnotify))
 ## License
 
    Licensed under the Apache License, Version 2.0 (the "License");

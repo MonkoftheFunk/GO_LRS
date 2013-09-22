@@ -102,6 +102,19 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 	session := dbSession()
 	defer session.Close()
 	statementsC := session.DB("LRS").C("statements")
+	index := mgo.Index{
+		Key:        []string{"id"},
+		Unique:     true,
+		DropDups:   true,
+		Background: true,
+		Sparse:     true,
+	}
+	err = statementsC.EnsureIndex(index)
+	if err != nil {
+		//fmt.Fprint(w, err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	// check if trying to replace object with same id
 	status := checkIdConflictBatch(w, statementsC, statements)
@@ -172,13 +185,26 @@ func PutStatement(w http.ResponseWriter, r *http.Request) {
 	session := dbSession()
 	defer session.Close()
 	statementsC := session.DB("LRS").C("statements")
+	index := mgo.Index{
+		Key:        []string{"id"},
+		Unique:     true,
+		DropDups:   true,
+		Background: true,
+		Sparse:     true,
+	}
+	err = statementsC.EnsureIndex(index)
+	if err != nil {
+		//fmt.Fprint(w, err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	// check if trying to replace object with same id
 	s.Id = statementId
 	status := checkIdConflict(w, statementsC, s)
 	if status != 0 {
 		w.WriteHeader(status)
-		// fmt.Fprint(w, "confilct "+string(status))
+		//fmt.Fprint(w, "confilct "+string(status))
 		return
 	}
 
@@ -274,6 +300,7 @@ func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, st
 		// find any statements with those ids
 		var result []Statement
 		err := statementsC.Find(bson.M{"id": bson.M{"$in": IDs}}).All(&result)
+
 		if err != nil {
 			return 0
 		}
@@ -285,6 +312,7 @@ func checkIdConflictBatch(w http.ResponseWriter, statementsC *mgo.Collection, st
 
 			rj, _ := json.Marshal(Lkup[s.Id])
 			sj, _ := json.Marshal(s)
+
 			if string(rj) != string(sj) {
 				return http.StatusConflict
 			}
@@ -300,6 +328,7 @@ func checkIdConflict(w http.ResponseWriter, statementsC *mgo.Collection, stateme
 		var result Statement
 		err := statementsC.Find(bson.M{"id": statement.Id}).One(&result)
 		if err != nil {
+			//fmt.Fprint(w, err)
 			return 0
 		}
 
@@ -312,6 +341,9 @@ func checkIdConflict(w http.ResponseWriter, statementsC *mgo.Collection, stateme
 
 		if string(rj) != string(sj) {
 			return http.StatusConflict
+		} else {
+			//same no need to insert
+			return http.StatusNoContent
 		}
 	}
 	return 0
@@ -354,11 +386,11 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 	// check if	contain both statementId and voidedStatementId parameters then 400
 	statementId := r.FormValue("statementId")
 	voidedStatementId := r.FormValue("voidedStatementId")
-	if statementId == "" && voidedStatementId == "" {
+	/*if statementId == "" && voidedStatementId == "" {
 		//fmt.Fprint(w, "no id")
 		w.WriteHeader(http.StatusBadRequest)
 		return
-	}
+	}*/
 
 	if statementId != "" || voidedStatementId != "" {
 		singleQuery(w, r, statementId, voidedStatementId)
@@ -420,33 +452,39 @@ func singleQuery(w http.ResponseWriter, r *http.Request, statementId string, voi
 }
 
 func complexQuery(w http.ResponseWriter, r *http.Request) {
+
 	var q = bson.M{}
 	var tq = []bson.M{}
 	var and = []bson.M{}
+	var s = bson.M{}
+	var u = bson.M{}
+
 	if since := r.FormValue("since"); since != "" {
 		t, _ := time.Parse("RFC3339", since)
 		tq = append(tq, bson.M{"$gt": t})
+		s = tq[0]
 	}
 
 	if until := r.FormValue("until"); until != "" {
 		t, _ := time.Parse("RFC3339", until)
 		tq = append(tq, bson.M{"$lt": t})
+		u = tq[1]
 	}
 
 	if len(tq) == 2 {
-		q["StoredVal"] = bson.M{"$and": tq}
+		q["storedVal"] = bson.M{"$and": tq}
 	} else if len(tq) == 1 {
-		q["StoredVal"] = tq[0]
+		q["storedVal"] = s
 	}
 
 	findInRef := false
 	if verb := r.FormValue("verb"); verb != "" {
-		q["Verb"] = verb
+		q["verb.id"] = verb
 		findInRef = true
 	}
 
 	if registration := r.FormValue("registration"); registration != "" {
-		q["Registration"] = registration
+		q["registration"] = registration
 		findInRef = true
 	}
 
@@ -456,13 +494,13 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(strings.NewReader(agent))
 		err := decoder.Decode(&actor)
 		if err != nil {
-			// fmt.Fprint(w, err)
+			//fmt.Fprint(w, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		aq := []bson.M{bson.M{"Actor": actor},
-			bson.M{"Actor.Member": actor}}
+			bson.M{"actor.member": actor}}
 
 		findInRef = true
 
@@ -474,31 +512,31 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 			aq = append(aq, bson.M{"Object.Context.Team": actor})
 		}
 
-		and = append(and, bson.M{"$or":aq})
+		and = append(and, bson.M{"$or": aq})
 	}
 
 	if activity := r.FormValue("activity"); activity != "" {
 
-		activq := []bson.M{bson.M{"Object.Id": activity}}
+		activq := []bson.M{bson.M{"object.id": activity}}
 
 		findInRef = true
 
 		related_activities := r.FormValue("related_activities")
 		if related_activities != "" && related_activities == "true" {
-			activq = append(activq, bson.M{"Context.ContextActivities": activity})
-			activq = append(activq, bson.M{"Object.Context.ContextActivities": activity})
+			activq = append(activq, bson.M{"context.contextActivities": activity})
+			activq = append(activq, bson.M{"object.context.contextActivities": activity})
 		}
 
-		and = append(and, bson.M{"$or":activq})
+		and = append(and, bson.M{"$or": activq})
 	}
 
 	if attachments := r.FormValue("attachments"); attachments != "" {
 		//todo
 	}
 
-	order := "-StoredVal"
+	order := "-storedVal"
 	if ascending := r.FormValue("ascending"); ascending == "true" {
-		order = "StoredVal"
+		order = "storedVal"
 	}
 
 	//how can I control formating?
@@ -506,10 +544,13 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		//todo
 	}
 
-	q["$and"] = and
+	if len(and) != 0 {
+		q["$and"] = and
+	}
 
 	// find all statements that refrence the found statments
 	// requery with original query and appended query
+	//findInRef = false
 	if findInRef {
 		session := dbSession()
 		defer session.Close()
@@ -521,21 +562,24 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		var result []Statement
 		err := statementsC.Find(q).All(&result)
 		if err != nil {
-			// fmt.Fprint(w, err
+			//fmt.Fprint(w, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		qr := bson.M{}
-		err = findStatementRefs(result, tq[0], tq[1], &qr)
+		err = findStatementRefs(w, result, s, u, &qr)
+
 		if err != nil {
-			// fmt.Fprint(w, err
+			//fmt.Fprint(w, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		and = append(and, qr)
-		q["$and"] = and
+		if len(and) != 0 {
+			and = append(and, qr)
+			q["$and"] = and
+		}
 	}
 
 	limit := r.FormValue("limit")
@@ -560,11 +604,15 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		Limit(i).
 		All(&result)
 	if err != nil {
-		// fmt.Fprint(w, err)
+		//fmt.Fprint(w, err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
+	if len(result)==0 {
+	    w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
 	// https://github.com/adlnet/xAPI-Spec/blob/master/xAPI.md#stmtapi
 	// /lrs/util/req_process.py :143
@@ -579,7 +627,7 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 	enc.Encode(result)
 }
 
-func findStatementRefs(stmtset []Statement, sinceq bson.M, untilq bson.M, q *bson.M) error {
+func findStatementRefs(w http.ResponseWriter, stmtset []Statement, sinceq bson.M, untilq bson.M, q *bson.M) error {
 
 	// stop searching for refrence of refrence if none left
 	if len(stmtset) == 0 {
@@ -590,7 +638,7 @@ func findStatementRefs(stmtset []Statement, sinceq bson.M, untilq bson.M, q *bso
 	// and add to query to find anything that refrences' them
 	qs := []bson.M{}
 	for _, s := range stmtset {
-		qs = append(qs, bson.M{"Object.ObjectType": "StatementRef", "Object.Id": s.Id})
+		qs = append(qs, bson.M{"object.objectType": "statementRef", "object.id": s.Id})
 	}
 	qs = []bson.M{bson.M{"$or": qs}}
 
@@ -605,7 +653,7 @@ func findStatementRefs(stmtset []Statement, sinceq bson.M, untilq bson.M, q *bso
 	}
 
 	// finally weed out voided statements in this lookup
-	qs = append(qs, bson.M{"Void": false})
+	qs = append(qs, bson.M{"void": false})
 
 	// connect to db
 	session := dbSession()
@@ -613,12 +661,12 @@ func findStatementRefs(stmtset []Statement, sinceq bson.M, untilq bson.M, q *bso
 	statementsC := session.DB("LRS").C("statements")
 
 	var result []Statement
-	err := statementsC.Find(qs).Distinct("Id", &result)
+	err := statementsC.Find(qs).Distinct("id", &result)
 	if err != nil {
 		return err
 	}
 
-	err = findStatementRefs(result, sinceq, untilq, q)
+	err = findStatementRefs(w, result, sinceq, untilq, q)
 	if err != nil {
 		return err
 	}
