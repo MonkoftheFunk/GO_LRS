@@ -753,6 +753,14 @@ type Object struct {
 	ObjectType string     `bson:"objectType,omitempty" json:"objectType,omitempty"`
 	Id         string     `bson:"id,omitempty" json:"id,omitempty"`
 	Definition Definition `bson:"definition,omitempty" json:"definition,omitempty"`
+	// Agent
+	Name         string  `bson:"name,omitempty" json:"name,omitempty"`
+	Mbox         string  `bson:"mbox,omitempty" json:"mbox,omitempty"`
+	Mbox_sha1sum string  `bson:"mbox_sha1sum,omitempty" json:"mbox_sha1sum,omitempty"`
+	OpenID       string  `bson:"openID,omitempty" json:"openID,omitempty"`
+	Account      Account `bson:"account,omitempty" json:"account,omitempty"`
+	// group
+	Member []Actor `bson:"member,omitempty" json:"member,omitempty"`
 	// substatement
 	Actor       Actor        `bson:"actor,omitempty" json:"actor,omitempty"`
 	Verb        Verb         `bson:"verb,omitempty" json:"verb,omitempty"`
