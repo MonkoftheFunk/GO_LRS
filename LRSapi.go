@@ -499,17 +499,17 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		aq := []bson.M{bson.M{"Actor": actor},
+		aq := []bson.M{bson.M{"actor": actor},
 			bson.M{"actor.member": actor}}
 
 		findInRef = true
 
 		related_agents := r.FormValue("related_agents")
 		if related_agents != "" && related_agents == "true" {
-			aq = append(aq, bson.M{"Object.Actor": actor})
-			aq = append(aq, bson.M{"Context.Instructor": actor})
-			aq = append(aq, bson.M{"Object.Context.Instructor": actor})
-			aq = append(aq, bson.M{"Object.Context.Team": actor})
+			aq = append(aq, bson.M{"object": actor})
+			aq = append(aq, bson.M{"context.instructor": actor})
+			aq = append(aq, bson.M{"object.context.instructor": actor})
+			aq = append(aq, bson.M{"object.context.team": actor})
 		}
 
 		and = append(and, bson.M{"$or": aq})
@@ -599,7 +599,7 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 	defer session.Close()
 	statementsC := session.DB("LRS").C("statements")
 
-	var result []Statement
+	var result []Statement //[]map[string] interface{} //	  []Statement //
 	err = statementsC.Find(q).Sort(order).
 		Limit(i).
 		All(&result)
@@ -609,8 +609,8 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(result)==0 {
-	    w.WriteHeader(http.StatusNotFound)
+	if len(result) == 0 {
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	// https://github.com/adlnet/ADL_LRS/blob/d86aa83ec5674982a233bae5a90df5288c8209d0/lrs/util/retrieve_statement.py
@@ -623,8 +623,10 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 	// return back found statement
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+
 	enc := json.NewEncoder(w)
 	enc.Encode(result)
+
 }
 
 func findStatementRefs(w http.ResponseWriter, stmtset []Statement, sinceq bson.M, untilq bson.M, q *bson.M) error {
@@ -699,41 +701,42 @@ func (s *Statement) Validate() (string, int) {
 // -----------------------------------------------------------------
 // import github.com/bitly/go-simplejson maybe instead
 type Statement struct {
-	Id          string       `bson:"id,omitempty" json:"id,omitempty"`
-	Void        bool         `json:"-"`
-	Actor       Actor        `bson:"actor,omitempty" json:"actor,omitempty"`
-	Verb        Verb         `bson:"verb,omitempty" json:"verb,omitempty"`
-	Object      Object       `bson:"object,omitempty" json:"object,omitempty"`
-	Result      Result       `bson:"result,omitempty" json:"result,omitempty"`
-	Context     Context      `bson:"context,omitempty" json:"context,omitempty"`
-	Timestamp   string       `bson:"timestamp,omitempty" json:"timestamp,omitempty"`
-	Stored      string       `bson:"stored,omitempty" json:"stored,omitempty"`
-	StoredVal   time.Time    `bson:"storedVal,omitempty" json:"-"`
-	Authority   Actor        `bson:"authority,omitempty" json:"authority,omitempty"`
-	Version     string       `bson:"version,omitempty" json:"version,omitempty"`
-	Attachments []Attachment `bson:"attachments,omitempty" json:"attachments,omitempty"`
+	//_Id bson.ObjectId `bson:"_id,-" json:"_id,-"`
+	Id          string        `bson:"id,omitempty" json:"id,omitempty"`
+	Void        bool          `json:"-"`
+	Actor       *Actor        `bson:"actor,omitempty" json:"actor,omitempty"`
+	Verb        Verb          `bson:"verb,omitempty" json:"verb,omitempty"`
+	Object      *Object       `bson:"object,omitempty" json:"object,omitempty"`
+	Result      *Result       `bson:"result,omitempty" json:"result,omitempty"`
+	Context     *Context      `bson:"context,omitempty" json:"context,omitempty"`
+	Timestamp   string        `bson:"timestamp,omitempty" json:"timestamp,omitempty"`
+	Stored      string        `bson:"stored,omitempty" json:"stored,omitempty"`
+	StoredVal   time.Time     `json:"-"`
+	Authority   *Actor        `bson:"authority,omitempty" json:"authority,omitempty"`
+	Version     string        `bson:"version,omitempty" json:"version,omitempty"`
+	Attachments []*Attachment `bson:"attachments,omitempty" json:"attachments,omitempty"`
 }
 
 // statement
 type Actor struct {
-	ObjectType   string  `bson:"objectType,omitempty" json:"objectType,omitempty"`
-	Name         string  `bson:"name,omitempty" json:"name,omitempty"`
-	Mbox         string  `bson:"mbox,omitempty" json:"mbox,omitempty"`
-	Mbox_sha1sum string  `bson:"mbox_sha1sum,omitempty" json:"mbox_sha1sum,omitempty"`
-	OpenID       string  `bson:"openID,omitempty" json:"openID,omitempty"`
-	Account      Account `bson:"account,omitempty" json:"account,omitempty"`
+	ObjectType   string   `bson:"objectType,omitempty" json:"objectType,omitempty"`
+	Name         string   `bson:"name,omitempty" json:"name,omitempty"`
+	Mbox         string   `bson:"mbox,omitempty" json:"mbox,omitempty"`
+	Mbox_sha1sum string   `bson:"mbox_sha1sum,omitempty" json:"mbox_sha1sum,omitempty"`
+	OpenID       string   `bson:"openID,omitempty" json:"openID,omitempty"`
+	Account      *Account `bson:"account,omitempty" json:"account,omitempty"`
 	// group
-	Member []Actor `bson:"member,omitempty" json:"member,omitempty"`
+	Member []*Actor `bson:"member,omitempty" json:"member,omitempty"`
 }
 
 // actor
 type Agent struct {
-	ObjectType   string  `bson:",omitempty" json:",omitempty"`
-	Name         string  `bson:",omitempty" json:",omitempty"`
-	Mbox         string  `bson:",omitempty" json:",omitempty"`
-	Mbox_sha1sum string  `bson:",omitempty" json:",omitempty"`
-	OpenID       string  `bson:",omitempty" json:",omitempty"`
-	Account      Account `bson:",omitempty" json:",omitempty"`
+	ObjectType   string   `bson:",omitempty" json:",omitempty"`
+	Name         string   `bson:",omitempty" json:",omitempty"`
+	Mbox         string   `bson:",omitempty" json:",omitempty"`
+	Mbox_sha1sum string   `bson:",omitempty" json:",omitempty"`
+	OpenID       string   `bson:",omitempty" json:",omitempty"`
+	Account      *Account `bson:",omitempty" json:",omitempty"`
 }
 
 // actor
@@ -750,56 +753,56 @@ type Verb struct {
 
 // activity, Agent/Group, Sub-Statement, StatementReference
 type Object struct {
-	ObjectType string     `bson:"objectType,omitempty" json:"objectType,omitempty"`
-	Id         string     `bson:"id,omitempty" json:"id,omitempty"`
-	Definition Definition `bson:"definition,omitempty" json:"definition,omitempty"`
+	ObjectType string `bson:"objectType,omitempty" json:"objectType,omitempty"`
+	Id         string `bson:"id,omitempty" json:"id,omitempty"`
 	// Agent
-	Name         string  `bson:"name,omitempty" json:"name,omitempty"`
-	Mbox         string  `bson:"mbox,omitempty" json:"mbox,omitempty"`
-	Mbox_sha1sum string  `bson:"mbox_sha1sum,omitempty" json:"mbox_sha1sum,omitempty"`
-	OpenID       string  `bson:"openID,omitempty" json:"openID,omitempty"`
-	Account      Account `bson:"account,omitempty" json:"account,omitempty"`
+	Name         string   `bson:"name,omitempty" json:"name,omitempty"`
+	Mbox         string   `bson:"mbox,omitempty" json:"mbox,omitempty"`
+	Mbox_sha1sum string   `bson:"mbox_sha1sum,omitempty" json:"mbox_sha1sum,omitempty"`
+	OpenID       string   `bson:"openID,omitempty" json:"openID,omitempty"`
+	Account      *Account `bson:"account,omitempty" json:"account,omitempty"`
 	// group
-	Member []Actor `bson:"member,omitempty" json:"member,omitempty"`
+	Member []*Actor `bson:"member,omitempty" json:"member,omitempty"`
 	// substatement
-	Actor       Actor        `bson:"actor,omitempty" json:"actor,omitempty"`
-	Verb        Verb         `bson:"verb,omitempty" json:"verb,omitempty"`
-	Object      StatementRef `bson:"object,omitempty" json:"object,omitempty"`
-	Result      Result       `bson:"result,omitempty" json:"result,omitempty"`
-	Context     Context      `bson:"context,omitempty" json:"context,omitempty"`
-	Timestamp   string       `bson:"timestamp,omitempty" json:"timestamp,omitempty"`
-	Stored      string       `bson:"stored,omitempty" json:"stored,omitempty"`
-	StoredVal   time.Time    `bson:"storedVal,omitempty" json:"-"`
-	Authority   Actor        `bson:"authority,omitempty" json:"authority,omitempty"`
-	Version     string       `bson:"version,omitempty" json:"version,omitempty"`
-	Attachments []Attachment `bson:"attachments,omitempty" json:"attachments,omitempty"`
+	Definition  *Definition   `bson:"definition,omitempty" json:"definition,omitempty"`
+	Actor       *Actor        `bson:"actor,omitempty" json:"actor,omitempty"`
+	Verb        *Verb         `bson:"verb,omitempty" json:"verb,omitempty"`
+	Object      *StatementRef `bson:"object,omitempty" json:"object,omitempty"`
+	Result      *Result       `bson:"result,omitempty" json:"result,omitempty"`
+	Context     *Context      `bson:"context,omitempty" json:"context,omitempty"`
+	Timestamp   string        `bson:"timestamp,omitempty" json:"timestamp,omitempty"`
+	Stored      string        `bson:"stored,omitempty" json:"stored,omitempty"`
+	StoredVal   time.Time     `bson:"storedVal,omitempty" json:"-"`
+	Authority   *Actor        `bson:"authority,omitempty" json:"authority,omitempty"`
+	Version     string        `bson:"version,omitempty" json:"version,omitempty"`
+	Attachments []*Attachment `bson:"attachments,omitempty" json:"attachments,omitempty"`
 }
 
 // object
 type Definition struct {
-	Name                    map[string]string       `bson:"name,omitempty" json:"name,omitempty"`
-	Description             map[string]string       `bson:"description,omitempty" json:"description,omitempty"`
-	Type                    string                  `bson:"type,omitempty" json:"type,omitempty"`
-	MoreInfo                string                  `bson:"moreInfo,omitempty" json:"moreInfo,omitempty"`
-	InteractionType         string                  `bson:"interactionType,omitempty" json:"interactionType,omitempty"`
-	CorrectResponsesPattern []string                `bson:"correctResponsesPattern,omitempty" json:"correctResponsesPattern,omitempty"`
-	Choices                 []InteractionComponents `bson:"choices,omitempty" json:"choices,omitempty"`
-	Scale                   []InteractionComponents `bson:"scale,omitempty" json:"scale,omitempty"`
-	Source                  []InteractionComponents `bson:"source,omitempty" json:"source,omitempty"`
-	Target                  []InteractionComponents `bson:"target,omitempty" json:"target,omitempty"`
-	Steps                   []InteractionComponents `bson:"steps,omitempty" json:"steps,omitempty"`
-	Extensions              map[string]interface{}  `bson:"extensions,omitempty" json:"extensions,omitempty"`
+	Name                    map[string]string        `bson:"name,omitempty" json:"name,omitempty"`
+	Description             map[string]string        `bson:"description,omitempty" json:"description,omitempty"`
+	Type                    string                   `bson:"type,omitempty" json:"type,omitempty"`
+	MoreInfo                string                   `bson:"moreInfo,omitempty" json:"moreInfo,omitempty"`
+	InteractionType         string                   `bson:"interactionType,omitempty" json:"interactionType,omitempty"`
+	CorrectResponsesPattern []string                 `bson:"correctResponsesPattern,omitempty" json:"correctResponsesPattern,omitempty"`
+	Choices                 []*InteractionComponents `bson:"choices,omitempty" json:"choices,omitempty"`
+	Scale                   []*InteractionComponents `bson:"scale,omitempty" json:"scale,omitempty"`
+	Source                  []*InteractionComponents `bson:"source,omitempty" json:"source,omitempty"`
+	Target                  []*InteractionComponents `bson:"target,omitempty" json:"target,omitempty"`
+	Steps                   []*InteractionComponents `bson:"steps,omitempty" json:"steps,omitempty"`
+	Extensions              map[string]interface{}   `bson:"extensions,omitempty" json:"extensions,omitempty"`
 }
 
 // definition
 type Interaction struct {
-	InteractionType         string                  `bson:"interactionType,omitempty" json:"interactionType,omitempty"`
-	CorrectResponsesPattern []string                `bson:"correctResponsesPattern,omitempty" json:"correctResponsesPattern,omitempty"`
-	Choices                 []InteractionComponents `bson:"choices,omitempty" json:"choices,omitempty"`
-	Scale                   []InteractionComponents `bson:"scale,omitempty" json:"scale,omitempty"`
-	Source                  []InteractionComponents `bson:"source,omitempty" json:"source,omitempty"`
-	Target                  []InteractionComponents `bson:"target,omitempty" json:"target,omitempty"`
-	Steps                   []InteractionComponents `bson:"steps,omitempty" json:"steps,omitempty"`
+	InteractionType         string                   `bson:"interactionType,omitempty" json:"interactionType,omitempty"`
+	CorrectResponsesPattern []string                 `bson:"correctResponsesPattern,omitempty" json:"correctResponsesPattern,omitempty"`
+	Choices                 []*InteractionComponents `bson:"choices,omitempty" json:"choices,omitempty"`
+	Scale                   []*InteractionComponents `bson:"scale,omitempty" json:"scale,omitempty"`
+	Source                  []*InteractionComponents `bson:"source,omitempty" json:"source,omitempty"`
+	Target                  []*InteractionComponents `bson:"target,omitempty" json:"target,omitempty"`
+	Steps                   []*InteractionComponents `bson:"steps,omitempty" json:"steps,omitempty"`
 }
 
 // interaction
@@ -810,7 +813,7 @@ type InteractionComponents struct {
 
 // statement
 type Result struct {
-	Score      Score                  `bson:"score,omitempty" json:"score,omitempty"`
+	Score      *Score                 `bson:"score,omitempty" json:"score,omitempty"`
 	Success    bool                   `bson:"success,omitempty" json:"success,omitempty"`
 	Completion bool                   `bson:"completion,omitempty" json:"completion,omitempty"`
 	Response   string                 `bson:"response,omitempty" json:"response,omitempty"`
@@ -829,21 +832,21 @@ type Score struct {
 // statement
 type Context struct {
 	Registration      string                 `bson:"registration,omitempty" json:"registration,omitempty"`
-	Instructor        Actor                  `bson:"instructor,omitempty" json:"instructor,omitempty"`
-	Team              Actor                  `bson:"team,omitempty" json:"team,omitempty"`
+	Instructor        *Actor                 `bson:"instructor,omitempty" json:"instructor,omitempty"`
+	Team              *Actor                 `bson:"team,omitempty" json:"team,omitempty"`
 	ContextActivities map[string]interface{} `bson:"contextActivities,omitempty" json:"contextActivities,omitempty"`
 	Revision          string                 `bson:"revision,omitempty" json:"revision,omitempty"`
 	Platform          string                 `bson:"platform,omitempty" json:"platform,omitempty"`
 	Language          string                 `bson:"language,omitempty" json:"language,omitempty"`
-	Statement         StatementRef           `bson:"statement,omitempty" json:"statement,omitempty"`
+	Statement         *StatementRef          `bson:"statement,omitempty" json:"statement,omitempty"`
 	Extensions        map[string]interface{} `bson:"extensions,omitempty" json:"extensions,omitempty"`
 }
 
 // context
 type StatementRef struct {
-	ObjectType string     `bson:"objectType,omitempty" json:"objectType,omitempty"`
-	Id         string     `bson:"id,omitempty" json:"id,omitempty"`
-	Definition Definition `bson:"definition,omitempty" json:"definition,omitempty"`
+	ObjectType string      `bson:"objectType,omitempty" json:"objectType,omitempty"`
+	Id         string      `bson:"id,omitempty" json:"id,omitempty"`
+	Definition *Definition `bson:"definition,omitempty" json:"definition,omitempty"`
 }
 
 // statement
