@@ -13,6 +13,7 @@ $ go get github.com/gorilla/mux
 $ go get github.com/nu7hatch/gouuid
 
 // monogdb (requires bzr to download)
+// get latest version http://blog.labix.org/2013/09/05/mgo-r2013-09-04-released
 $ go get labix.org/v2/mgo
 $ go get labix.org/v2/mgo/bson
 ```
@@ -25,9 +26,9 @@ Done:
 In Progress:
 * GET complex query
 * GET more query due to limit
+* Auth and Cross Origin Requests
 * [REST API Tests](https://github.com/MonkoftheFunk/LRS_Validator)
 * Deal with attachments
-* Auth and Cross Origin Requests
 * Concurrency
 * Statement Validation
 

@@ -7,7 +7,7 @@ package main
 
 import (
 	"encoding/json"
-	//"fmt"
+	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/nu7hatch/gouuid"
 	"io"
@@ -15,6 +15,7 @@ import (
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -40,10 +41,12 @@ func dbSession() *mgo.Session {
 	return session
 }
 
-func readStmts(r io.Reader) (bool, string, error) {
+//todo perhaps convert certain objects to array of single object for
+//ease of mapping
+func readStmts(r io.Reader) (bool, []byte, error) {
 	body, err := ioutil.ReadAll(r)
 	if err != nil {
-		return false, string(body), err
+		return false, body, err
 	}
 
 	isArray := false
@@ -55,7 +58,97 @@ func readStmts(r io.Reader) (bool, string, error) {
 		break
 	}
 
-	return isArray, string(body), err
+	return isArray, body, err
+}
+
+func convertStatementElementsObjToArray(tempStatement map[string]interface{}) (Statement, error) {
+	var statement Statement
+
+	// todo go through each possible single object elements that are supposed to be arrays
+
+	// check if the element is a map, then change to array
+	if reflect.TypeOf(tempStatement["account"]).Kind() == reflect.Map {
+		var a []interface{}
+		tempStatement["account"] = append(a, tempStatement["account"])
+	}
+
+	// turn in back to a string
+	b, err := json.Marshal(tempStatement)
+	if err != nil {
+		return statement, err
+	}
+
+	// then turn that string into the struct
+	err = json.Unmarshal(b, &statement)
+	if err != nil {
+		return statement, err
+	}
+	return statement, nil
+}
+
+func PreProcessStatement(r io.Reader) (Statement, error) {
+	// read whole stream
+	var statement Statement
+	body, err := ioutil.ReadAll(r)
+	if err != nil {
+		return statement, err
+	}
+
+	// create temporary map for processing
+	var tempStatement map[string]interface{}
+	err = json.Unmarshal(body, &tempStatement)
+	if err != nil {
+		return statement, err
+	}
+
+	// process temporary map to statement
+	statement, err = convertStatementElementsObjToArray(tempStatement)
+	return statement, err
+}
+
+func PreProcessStatements(r io.Reader) ([]Statement, error) {
+	// determin if array of statements or just single statement
+	isArray, body, err := readStmts(r)
+	if err != nil {
+		return nil, err
+	}
+
+	var statement Statement
+	var statements []Statement
+	if isArray {
+		// create temporary array map for processing
+		var tempStatements []map[string]interface{}
+		err = json.Unmarshal(body, &tempStatements)
+		if err != nil {
+			return statements, err
+		}
+
+		// loop through each statement to convert
+		for _, s := range tempStatements {
+			// process temporary map to statement
+			statement, err = convertStatementElementsObjToArray(s)
+			if err != nil {
+				return statements, err
+			}
+			// create statement array used for Post
+			statements = append(statements, statement)
+		}
+	} else {
+		// create temporary map for processing
+		var tempStatement map[string]interface{}
+		err = json.Unmarshal(body, &tempStatement)
+		if err != nil {
+			return statements, err
+		}
+		// process temporary map to statement
+		statement, err = convertStatementElementsObjToArray(tempStatement)
+		if err != nil {
+			return statements, err
+		}
+		// create statement array used for Post
+		statements = append(statements, statement)
+	}
+	return statements, nil
 }
 
 func PostStatement(w http.ResponseWriter, r *http.Request) {
@@ -70,32 +163,11 @@ func PostStatement(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("x-experience-api-version", "1.0")
 	defer r.Body.Close()
 
-	// determin if array of statements or just single statement
-	isArray, body, err := readStmts(r.Body)
+	statements, err := PreProcessStatements(r.Body)
 	if err != nil {
+		// fmt.Fprint(w, err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
-	}
-
-	decoder := json.NewDecoder(strings.NewReader(body))
-
-	var statements []Statement
-	if isArray {
-		err := decoder.Decode(&statements)
-		if err != nil {
-			//fmt.Fprint(w, err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-	} else {
-		var statement Statement
-		err := decoder.Decode(&statement)
-		if err != nil {
-			// fmt.Fprint(w, err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		statements = append(statements, statement)
 	}
 
 	// connect to db
@@ -170,14 +242,11 @@ func PutStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decoder := json.NewDecoder(r.Body)
-
-	var s Statement
-	err := decoder.Decode(&s)
+	s, err := PreProcessStatement(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		// fmt.Fprint(w, "decode error")
-		// fmt.Fprint(w, err)
+		fmt.Fprint(w, "decode error")
+		fmt.Fprint(w, err)
 		return
 	}
 
@@ -484,7 +553,7 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if registration := r.FormValue("registration"); registration != "" {
-		q["registration"] = registration
+		q["context.registration"] = registration
 		findInRef = true
 	}
 
@@ -523,8 +592,16 @@ func complexQuery(w http.ResponseWriter, r *http.Request) {
 
 		related_activities := r.FormValue("related_activities")
 		if related_activities != "" && related_activities == "true" {
-			activq = append(activq, bson.M{"context.contextActivities": activity})
-			activq = append(activq, bson.M{"object.context.contextActivities": activity})
+			// parent, grouping, category, other, for object or array
+			//sub statements?
+			activq = append(activq, bson.M{"context.contextActivities.parent.id": activity})
+			activq = append(activq, bson.M{"context.contextActivities.grouping.id": activity})
+			activq = append(activq, bson.M{"context.contextActivities.category.id": activity})
+			activq = append(activq, bson.M{"context.contextActivities.other.id": activity})
+			activq = append(activq, bson.M{"object.context.contextActivities.parent.id": activity})
+			activq = append(activq, bson.M{"object.context.contextActivities.grouping.id": activity})
+			activq = append(activq, bson.M{"object.context.contextActivities.category.id": activity})
+			activq = append(activq, bson.M{"object.context.contextActivities.other.id": activity})
 		}
 
 		and = append(and, bson.M{"$or": activq})
@@ -834,12 +911,20 @@ type Context struct {
 	Registration      string                 `bson:"registration,omitempty" json:"registration,omitempty"`
 	Instructor        *Actor                 `bson:"instructor,omitempty" json:"instructor,omitempty"`
 	Team              *Actor                 `bson:"team,omitempty" json:"team,omitempty"`
-	ContextActivities map[string]interface{} `bson:"contextActivities,omitempty" json:"contextActivities,omitempty"`
+	ContextActivities *ContextActivities     `bson:"contextActivities,omitempty" json:"contextActivities,omitempty"`
 	Revision          string                 `bson:"revision,omitempty" json:"revision,omitempty"`
 	Platform          string                 `bson:"platform,omitempty" json:"platform,omitempty"`
 	Language          string                 `bson:"language,omitempty" json:"language,omitempty"`
 	Statement         *StatementRef          `bson:"statement,omitempty" json:"statement,omitempty"`
 	Extensions        map[string]interface{} `bson:"extensions,omitempty" json:"extensions,omitempty"`
+}
+
+// contextActivities
+type ContextActivities struct {
+	Parent   []*Object `bson:"parent,omitempty" json:"parent,omitempty"`
+	Grouping []*Object `bson:"grouping,omitempty" json:"grouping,omitempty"`
+	Category []*Object `bson:"category,omitempty" json:"category,omitempty"`
+	Other    []*Object `bson:"other,omitempty" json:"other,omitempty"`
 }
 
 // context
