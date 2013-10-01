@@ -7,7 +7,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	//"fmt"
 	"github.com/gorilla/mux"
 	"github.com/nu7hatch/gouuid"
 	"io"
@@ -279,8 +279,8 @@ func PutStatement(w http.ResponseWriter, r *http.Request) {
 	s, err := PreProcessStatement(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, "decode error")
-		fmt.Fprint(w, err)
+		//fmt.Fprint(w, "decode error")
+		//fmt.Fprint(w, err)
 		return
 	}
 
