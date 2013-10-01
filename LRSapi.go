@@ -43,7 +43,7 @@ func dbSession() *mgo.Session {
 
 //todo perhaps convert certain objects to array of single object for
 //ease of mapping
-func readStmts(r io.Reader) (bool, []byte, error) {
+func isRootArray(r io.Reader) (bool, []byte, error) {
 	body, err := ioutil.ReadAll(r)
 	if err != nil {
 		return false, body, err
@@ -65,11 +65,18 @@ func convertStatementElementsObjToArray(tempStatement map[string]interface{}) (S
 	var statement Statement
 
 	// todo go through each possible single object elements that are supposed to be arrays
+	if tempStatement["context"] != nil &&
+		tempStatement["context"].(map[string]interface{})["contextActivities"] != nil {
+		ca := convertContextActivitiesToArray(tempStatement["context"].(map[string]interface{})["contextActivities"].(map[string]interface{}))
+		tempStatement["context"].(map[string]interface{})["contextActivities"] = ca
 
-	// check if the element is a map, then change to array
-	if reflect.TypeOf(tempStatement["account"]).Kind() == reflect.Map {
-		var a []interface{}
-		tempStatement["account"] = append(a, tempStatement["account"])
+	}
+
+	if tempStatement["object"] != nil &&
+		tempStatement["object"].(map[string]interface{})["context"] != nil &&
+		tempStatement["object"].(map[string]interface{})["context"].(map[string]interface{})["contextActivities"] != nil {
+		ca := convertContextActivitiesToArray(tempStatement["object"].(map[string]interface{})["context"].(map[string]interface{})["contextActivities"].(map[string]interface{}))
+		tempStatement["object"].(map[string]interface{})["context"].(map[string]interface{})["contextActivities"] = ca
 	}
 
 	// turn in back to a string
@@ -84,6 +91,33 @@ func convertStatementElementsObjToArray(tempStatement map[string]interface{}) (S
 		return statement, err
 	}
 	return statement, nil
+}
+
+func convertContextActivitiesToArray(tempCA map[string]interface{}) map[string]interface{} {
+	if tempCA != nil {
+		// check if the element is a map, then change to array
+		if tempCA["parent"] != nil && reflect.TypeOf(tempCA["parent"]).Kind() == reflect.Map {
+			var a []interface{}
+			tempCA["parent"] = append(a, tempCA["parent"])
+		}
+
+		if tempCA["grouping"] != nil && reflect.TypeOf(tempCA["grouping"]).Kind() == reflect.Map {
+			var a []interface{}
+			tempCA["grouping"] = append(a, tempCA["grouping"])
+		}
+
+		if tempCA["category"] != nil && reflect.TypeOf(tempCA["category"]).Kind() == reflect.Map {
+			var a []interface{}
+			tempCA["category"] = append(a, tempCA["category"])
+		}
+
+		if tempCA["other"] != nil && reflect.TypeOf(tempCA["other"]).Kind() == reflect.Map {
+			var a []interface{}
+			tempCA["other"] = append(a, tempCA["other"])
+		}
+
+	}
+	return tempCA
 }
 
 func PreProcessStatement(r io.Reader) (Statement, error) {
@@ -108,7 +142,7 @@ func PreProcessStatement(r io.Reader) (Statement, error) {
 
 func PreProcessStatements(r io.Reader) ([]Statement, error) {
 	// determin if array of statements or just single statement
-	isArray, body, err := readStmts(r)
+	isArray, body, err := isRootArray(r)
 	if err != nil {
 		return nil, err
 	}
