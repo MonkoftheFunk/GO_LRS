@@ -1,5 +1,6 @@
 Tin Can / xAPI Learning Record Store in "Go"
 =============================================
+** Taking a break from the project for a bit 10/18/2013 **
 
 Currently starting with the Statement API
 Refactoring and Tests will come later (looking at http://frisbyjs.com/ for a platform independent xAPI REST unit tests)
